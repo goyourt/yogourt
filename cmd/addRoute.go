@@ -144,7 +144,7 @@ func ` + routeName + `Handler(w http.ResponseWriter, r *http.Request) {
 			err = os.WriteFile(MainFile, []byte(contentStr), 0644)
 			// fmt.Printf("Erreur lors de la modification du fichier main.go: %v\n", err)
 		}
-
+		/* --- Fin modification du fichier main.go --- */
 	} else {
 		fmt.Println("Les dossiers `routes` et `handlers` n'existent pas.")
 		fmt.Println("Veuillez entrer la commande suivante: goyourt init projectName")

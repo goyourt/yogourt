@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
@@ -16,9 +17,45 @@ var InitCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1), //Attends un seul argument
 	Run: func(cmd *cobra.Command, args []string) {
 		ProjectName := args[0]
+
+		// Met à jour ton fichier .env interne avec le nom du projet
+		err := updateEnvFile(".env", ProjectName)
+		if err != nil {
+			fmt.Printf("❌ Erreur lors de la mise à jour du fichier .env : %v\n", err)
+			return
+		}
 		InitProject(ProjectName)
 		CreateConfigFile(ProjectName)
 	},
+}
+
+// Mise à jour du fichier .env interne
+func updateEnvFile(envPath, projectName string) error {
+
+	// Charge le fichier .env existant
+	envMap, err := godotenv.Read(envPath)
+	if err != nil {
+		return fmt.Errorf("Impossible de lire le fichier .env: %w", err)
+	}
+
+	// Variables à ajouter au .env
+	envMap["PROJECT_NAME"] = projectName
+	envMap["HANDLER_FOLDER"] = projectName + "/handlers/"
+	envMap["MAIN_FILE"] = projectName + "/main.go"
+	envMap["ROUTE_FOLDER"] = projectName + "/routes/"
+
+	// Construction du nouveau contenu du fichier .env
+	var newEnvContent strings.Builder
+	for key, value := range envMap {
+		newEnvContent.WriteString(fmt.Sprintf("%s=\"%s\"\n", key, value))
+	}
+
+	// Écriture dans le fichier .env interne
+	err = os.WriteFile(envPath, []byte(newEnvContent.String()), 0644) //Permet l'ecriture dans le fichier avec l'autorisation lecture + ecriture (0644)
+	if err != nil {
+		return fmt.Errorf("Impossible d'écrire dans le fichier .env: %w", err)
+	}
+	return nil
 }
 
 /* --- Création du fichier config --- */
@@ -117,7 +154,10 @@ func InitProject(ProjectName string) {
 
 	mainFileContent := `package main
 
-import "fmt"
+import (
+	"fmt"
+	"net/http"
+)
 
 func main() {
 	mux := http.NewServeMux()
