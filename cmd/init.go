@@ -17,8 +17,52 @@ var InitCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		ProjectName := args[0]
 		InitProject(ProjectName)
+		CreateConfigFile(ProjectName)
 	},
 }
+
+/* --- Création du fichier config --- */
+func CreateConfigFile(ProjectName string) {
+	//Création du fichier config
+	ConfigFile := ProjectName + "/config.yaml"
+
+	file, configFileError := os.Create(ConfigFile)
+	if configFileError != nil {
+		fmt.Printf("Erreur lors de la création du fichier config: %v \n", configFileError)
+		return
+	}
+	defer file.Close() //Fermeture du fichier config
+
+	configFileContent := `app_name: "` + ProjectName + `"
+version: "1.0.0"
+mode: "development"
+
+server:
+  host: "127.0.0.1"
+  port: 8080
+  cors: true
+
+database:
+  type: "postgres"
+  user: "admin"
+  password: "password"
+  host: "localhost"
+  port: 5432
+  dbname: "mydb"
+
+auth:
+  jwt_secret: "supersecretkey"
+  token_expiry: 3600
+
+logs:
+  level: "debug"
+  file: "logs/app.log"
+`
+
+	file.WriteString(configFileContent) //Ecriture du contenu dans le fichier config
+}
+
+/* --- FFin création du fichier config --- */
 
 /* --- Fonction pour la commande "init" du package --- */
 func InitProject(ProjectName string) {
@@ -88,16 +132,6 @@ func main() {
 }
 `
 	file.WriteString(mainFileContent) //Ecriture du contenu dans le fichier main.go
-
-	/* Fichier config - présent dans le dossier principal */
-	configFile := ProjectName + "/go.mod"
-
-	file, configFileError := os.Create(configFile)
-	if configFileError != nil {
-		fmt.Printf("Erreur lors de la création du fichier config: %v \n", configFileError)
-		return
-	}
-	defer file.Close() //Fermeture du fichier config
 
 	fmt.Println("L'environnement a été initialisé avec succès.")
 
