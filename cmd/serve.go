@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
 )
@@ -28,7 +29,17 @@ type Config struct {
 
 // Fonction pour charger le fichier YAML config
 func LoadConfig() (*Config, error) {
-	file, err := os.ReadFile("my_api/config.yaml")
+
+	// Chargement du fichier .env
+	err := godotenv.Load(".env")
+	if err != nil {
+		return nil, fmt.Errorf("❌ Erreur de chargement du fichier .env: %v", err)
+	}
+
+	// Récupération de la variable depuis le fichier .env
+	ProjectName := os.Getenv("PROJECT_NAME")
+
+	file, err := os.ReadFile(ProjectName + "/config.yaml")
 	if err != nil {
 		return nil, err
 	}
@@ -45,8 +56,18 @@ func LoadConfig() (*Config, error) {
 
 func RunServer() {
 
+	// Chargement du fichier .env
+	err := godotenv.Load(".env")
+	if err != nil {
+		fmt.Println("❌ Erreur de chargement du fichier .env")
+		return
+	}
+
+	// Récupération de la variable depuis le fichier .env
+	ProjectName := os.Getenv("PROJECT_NAME")
+
 	// Vérifie si config.yaml existe
-	if _, err := os.Stat("my_api/config.yaml"); os.IsNotExist(err) {
+	if _, err := os.Stat(ProjectName + "/config.yaml"); os.IsNotExist(err) {
 		fmt.Println("❌ Fichier config.yaml non trouvé, veuillez entrer la commande suivante: goyourt init project_name")
 		return
 	} else {

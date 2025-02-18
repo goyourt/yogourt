@@ -180,6 +180,7 @@ func main() {
 		"ROUTE_FOLDER":   RouteFolder,
 		"HANDLER_FOLDER": HandlerFolder,
 		"MAIN_FILE":      MainFile,
+		"PROJECT_NAME":   ProjectName,
 	}, ".env")
 	if err != nil {
 		fmt.Println("Erreur lors de la création du fichier .env:", err)
