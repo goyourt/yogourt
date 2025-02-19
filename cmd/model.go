@@ -142,6 +142,8 @@ func CreateModel() {
 		modelFileContent := `package models
 
 import (
+	"fmt"
+
 	"gorm.io/gorm"
 )
 
@@ -166,6 +168,57 @@ import (
 		}
 
 		modelFileContent += "}\n\n"
+
+		// Ajout des getters et setters pour chaque champs
+		for _, field := range fields {
+			modelFileContent += fmt.Sprintf("// Champ %s\n", field.Name)
+			// Getter
+			modelFileContent += fmt.Sprintf("func (u *%s) Get%s() %s {\n", modelName, field.Name, field.Type)
+			modelFileContent += fmt.Sprintf("\treturn u.%s\n}\n\n", field.Name)
+			// Setter
+			modelFileContent += fmt.Sprintf("func (u *%s) Set%s(%s %s) error {", modelName, field.Name, field.Name, field.Type)
+			// Contenu du setter selon le type de champ
+			switch field.Type {
+			case "int":
+				modelFileContent += `
+	if ` + field.Name + ` < 0 {
+		return fmt.Errorf("La valeur ne peut pas être négative")
+	}
+	u.` + field.Name + ` = ` + field.Name + `
+	return nil
+}
+
+`
+			case "string":
+				modelFileContent += `
+	if len(` + field.Name + `) == 0 {
+		return fmt.Errorf("Le nom ne peut pas être vide")
+	}
+	u.` + field.Name + ` = ` + field.Name + `
+	return nil
+}
+
+`
+			case "float":
+				modelFileContent += `
+	if ` + field.Name + ` < 0.00 {
+		return fmt.Errorf("La valeur ne peut pas être négative")
+	}
+	u.` + field.Name + ` = ` + field.Name + `
+	return nil
+}
+
+`
+			case "bool":
+				modelFileContent += `
+	u.` + field.Name + ` = ` + field.Name + `
+	return nil
+}
+
+`
+			}
+
+		}
 
 		// Ecriture dans le fichier modele
 		_, err = modelFile.WriteString(modelFileContent)
