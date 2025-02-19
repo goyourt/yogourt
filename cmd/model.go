@@ -112,7 +112,7 @@ func CreateModel() {
 			fieldConstraint := ""
 			ConstraintPrompt := &survey.Select{
 				Message: blue("Ajouter (ou non) une contrainte au champ :"),
-				Options: []string{"NOT NULL", "UNIQUE", "PRIMARY_KEY", "Aucune"},
+				Options: []string{"NOT_NULL", "UNIQUE", "PRIMARY_KEY", "Aucune"},
 			}
 			survey.AskOne(ConstraintPrompt, &fieldConstraint) // Proposition du champ
 
@@ -139,16 +139,29 @@ func CreateModel() {
 		defer modelFile.Close()
 
 		// Contenu du modele
-		modelFileContent := fmt.Sprintf("package models\n\n// Modèle pour %s\n", modelName)
+		modelFileContent := `package models
+
+import (
+	"gorm.io/gorm"
+)
+
+`
 		modelFileContent += fmt.Sprintf("type %s struct {\n", modelName)
 
 		// Ajoute les champs
 		for _, field := range fields {
-			modelFileContent += fmt.Sprintf("\t%s %s `json:\"%s\"`", field.Name, field.Type, field.Name)
+			modelFileContent += fmt.Sprintf("\t%s %s ", field.Name, field.Type)
 			if field.Constraint != "Aucune" {
-				modelFileContent += fmt.Sprintf("\t// %s\n", field.Constraint)
+				switch field.Constraint {
+				case "PRIMARY_KEY":
+					modelFileContent += fmt.Sprintf("\t`gorm:\"primaryKey;not null;unique\" json:\"%s\"`\n", field.Name)
+				case "NOT_NULL":
+					modelFileContent += fmt.Sprintf("\t`gorm:\"not null\" json:\"%s\"`\n", field.Name)
+				case "UNIQUE":
+					modelFileContent += fmt.Sprintf("\t`gorm:\"unique\" json:\"%s\"`\n", field.Name)
+				}
 			} else {
-				modelFileContent += "\n"
+				modelFileContent += fmt.Sprintf("\t`json:\"%s\"`\n", field.Name)
 			}
 		}
 

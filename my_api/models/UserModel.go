@@ -1,9 +1,13 @@
+
 package models
 
-// Modèle pour User
+import (
+	"gorm.io/gorm"
+)
+	
 type User struct {
-	ID int `json:"ID"`	// PRIMARY_KEY
-	Name string `json:"Name"`	// NOT NULL
-	Age int `json:"Age"`
+	id int 	`gorm:"primaryKey;not null;unique" json:"id"`
+	name string 	`gorm:"not null" json:"name"`
+	age int `json:"age"`
 }
 
