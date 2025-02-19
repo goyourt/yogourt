@@ -10,7 +10,7 @@ import (
 )
 
 var RouteCmd = &cobra.Command{
-	Use:   "route",
+	Use:   "route [routeName]",
 	Short: "Crée une nouvelle route avec handler correspondant",
 	Long:  "Crée un nouveau fichier route dans le dossier routes/ et un handler correspondant dans le dossier handlers/",
 	Args:  cobra.ExactArgs(1),

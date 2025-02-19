@@ -1,0 +1,166 @@
+/* --- Wizard permettant la création d'un model pour la base de données --- */
+
+package cmd
+
+import (
+	"fmt"
+	"os"
+	"regexp"
+	"strconv"
+
+	"github.com/AlecAivazis/survey/v2"
+	"github.com/fatih/color"
+	"github.com/joho/godotenv"
+	"github.com/spf13/cobra"
+)
+
+/* Commande Model */
+var ModelCmd = &cobra.Command{
+	Use:   "model",
+	Short: "Crée un modèle",
+	Long:  "Crée un modèle de table lié à la base de données",
+	Run: func(cmd *cobra.Command, args []string) {
+		CreateModel()
+	},
+}
+
+// Fonction de création du modele
+func CreateModel() {
+
+	// Initialisation des couleurs du text
+	green := color.New(color.FgGreen).SprintFunc()
+	blue := color.New(color.FgBlue).SprintFunc()
+
+	// Chargement du fichier .env
+	err := godotenv.Load(".env")
+	if err != nil {
+		fmt.Println("❌ Erreur de chargement du fichier .env")
+		return
+	}
+	// Récupèration des variables d'environnement
+	ModelFolder := os.Getenv("MODEL_FOLDER")
+	ProjectName := os.Getenv("PROJECT_NAME")
+
+	// Structure d'un champ
+	type Field struct {
+		Name       string
+		Type       string
+		Constraint string
+	}
+
+	// Structure d'un modele
+	type Model struct {
+		Name   string
+		Fields []Field
+	}
+
+	// Regex pour vérifier que le nom du modele et des champs (lettres en minuscules/majuscules)
+	var validName = regexp.MustCompile(`^[a-zA-Z]+$`)
+
+	// Vérifie si config.yaml existe
+	if _, err := os.Stat(ProjectName + "/config.yaml"); os.IsNotExist(err) {
+		fmt.Println("❌ Fichier config.yaml non trouvé, veuillez entrer la commande suivante: goyourt init project_name")
+		return
+	} else {
+		/* --- Début du wizard --- */
+		// Nom du modele
+		fmt.Printf("%s ", blue("Quel est le nom du modèle ?\n"))
+		var modelName string
+		fmt.Scanln(&modelName)
+		if modelName == "" || !validName.MatchString(modelName) {
+			fmt.Println("❌ Nom invalide, veuillez entrer un nom en lettres uniquement.")
+			return
+		} else {
+			fmt.Println(green("Nom du modèle: ", modelName))
+		}
+
+		// Nombre de champs
+		fmt.Printf("%s ", blue("Combien de champs voulez-vous ajouter dans ce modèle ?\n"))
+		var fieldCountStr string
+		fmt.Scanln(&fieldCountStr)
+		fieldCount, err := strconv.Atoi(fieldCountStr) // Convertion de la chaine de caracteres en nombre
+		if err != nil || fieldCount <= 0 {
+			fmt.Println("❌ Nombre invalide, veuillez entrer un entier positif.")
+			return
+		} else {
+			fmt.Println(green("Le modèle " + modelName + " aura " + fieldCountStr + " champs."))
+		}
+
+		// Création d'un slice pour les champs
+		var fields []Field
+
+		// Nom, type et contraintes des champs
+		for i := 1; i <= fieldCount; i++ {
+			// Nom du champ
+			fmt.Printf("%s ", blue("Quel est le nom de votre champ N°"+strconv.Itoa(i)+" ?\n"))
+			var fieldName string
+			fmt.Scanln(&fieldName)
+			if fieldName == "" || !validName.MatchString(fieldName) {
+				fmt.Println("❌ Nom du champ invalide, veuillez entrer un nom en lettres uniquement.")
+				return
+			}
+
+			// Type du champ (Utilisation de survey pour proposer des choix à l'utilisateur)
+			fieldType := ""
+			TypePrompt := &survey.Select{
+				Message: blue("Choisissez le type du champ :"),
+				Options: []string{"string", "int", "bool", "float", "datetime"},
+			}
+			survey.AskOne(TypePrompt, &fieldType) // Proposition du champ
+
+			// Contraintes du champ (Utilisation de survey pour proposer des choix à l'utilisateur)
+			fieldConstraint := ""
+			ConstraintPrompt := &survey.Select{
+				Message: blue("Ajouter (ou non) une contrainte au champ :"),
+				Options: []string{"NOT NULL", "UNIQUE", "PRIMARY_KEY", "Aucune"},
+			}
+			survey.AskOne(ConstraintPrompt, &fieldConstraint) // Proposition du champ
+
+			// Ajout du champ dans le slice
+			field := Field{
+				Name:       fieldName,
+				Type:       fieldType,
+				Constraint: fieldConstraint,
+			}
+
+			fields = append(fields, field)
+
+			fmt.Println(green("Champ " + fieldName + " de type " + fieldType + " à été créé avec succès."))
+		}
+
+		// Génération du modele
+		newModelFile := ModelFolder + modelName + "Model.go"
+
+		modelFile, modelFileError := os.Create(newModelFile)
+		if modelFileError != nil {
+			fmt.Printf("❌ Erreur lors de la création du model: %s\n", modelFileError)
+			return
+		}
+		defer modelFile.Close()
+
+		// Contenu du modele
+		modelFileContent := fmt.Sprintf("package models\n\n// Modèle pour %s\n", modelName)
+		modelFileContent += fmt.Sprintf("type %s struct {\n", modelName)
+
+		// Ajoute les champs
+		for _, field := range fields {
+			modelFileContent += fmt.Sprintf("\t%s %s `json:\"%s\"`", field.Name, field.Type, field.Name)
+			if field.Constraint != "Aucune" {
+				modelFileContent += fmt.Sprintf("\t// %s\n", field.Constraint)
+			} else {
+				modelFileContent += "\n"
+			}
+		}
+
+		modelFileContent += "}\n\n"
+
+		// Ecriture dans le fichier modele
+		_, err = modelFile.WriteString(modelFileContent)
+		if err != nil {
+			fmt.Printf("❌ Erreur d'écriture dans le fichier modèle : %v\n", err)
+			return
+		}
+
+		fmt.Println(green("✅ Modèle " + modelName + " créé avec succès."))
+	}
+}

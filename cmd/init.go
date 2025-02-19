@@ -43,6 +43,7 @@ func updateEnvFile(envPath, projectName string) error {
 	envMap["HANDLER_FOLDER"] = projectName + "/handlers/"
 	envMap["MAIN_FILE"] = projectName + "/main.go"
 	envMap["ROUTE_FOLDER"] = projectName + "/routes/"
+	envMap["MODEL_FOLDER"] = projectName + "/models/"
 
 	// Construction du nouveau contenu du fichier .env
 	var newEnvContent strings.Builder
@@ -99,7 +100,7 @@ logs:
 	file.WriteString(configFileContent) //Ecriture du contenu dans le fichier config
 }
 
-/* --- FFin création du fichier config --- */
+/* --- Fin création du fichier config --- */
 
 /* --- Fonction pour la commande "init" du package --- */
 func InitProject(ProjectName string) {
@@ -133,9 +134,9 @@ func InitProject(ProjectName string) {
 	}
 
 	/* Dossier model - présent dans le dossier principal */
-	modelFolder := ProjectName + "/models/"
+	ModelFolder := ProjectName + "/models/"
 
-	modelFolderError := os.Mkdir(modelFolder, os.ModePerm)
+	modelFolderError := os.Mkdir(ModelFolder, os.ModePerm)
 
 	if modelFolderError != nil {
 		fmt.Printf("Erreur lors de la création du dossier models: %v \n", modelFolderError)
@@ -181,6 +182,7 @@ func main() {
 		"HANDLER_FOLDER": HandlerFolder,
 		"MAIN_FILE":      MainFile,
 		"PROJECT_NAME":   ProjectName,
+		"MODEL_FOLDER":   ModelFolder,
 	}, ".env")
 	if err != nil {
 		fmt.Println("Erreur lors de la création du fichier .env:", err)
