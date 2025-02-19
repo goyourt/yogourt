@@ -21,8 +21,13 @@ var ServeCmd = &cobra.Command{
 	},
 }
 
-// Structure pour récupérer la configuration
+// Structure pour récupérer les données du server depuis le fichier config
 type Config struct {
+	Server ServerConfig `yaml:"server"`
+}
+
+// Structure pour les données de la section "server" du fichier config
+type ServerConfig struct {
 	Port int    `yaml:"port"`
 	Host string `yaml:"host"`
 }
@@ -80,8 +85,8 @@ func RunServer() {
 		}
 
 		// Récupère les valeurs du fichier de config
-		host := config.Host
-		port := config.Port
+		host := config.Server.Host
+		port := config.Server.Port
 		address := fmt.Sprintf("%s:%d", host, port)
 
 		// Création du ServeMux
