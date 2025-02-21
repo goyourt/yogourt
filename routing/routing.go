@@ -3,6 +3,7 @@ package routing
 import (
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/goyourt/yogourt/middleware"
 	"log"
 	"os"
 	"os/exec"
@@ -11,7 +12,7 @@ import (
 	"strings"
 )
 
-func Initialize(apiFolder string) {
+func Initialize(apiFolder string, middlewares map[string]func(*gin.Context)) {
 	basePath, err := os.Getwd()
 
 	if err != nil {
@@ -40,7 +41,7 @@ func Initialize(apiFolder string) {
 
 	r := gin.Default()
 
-	if err = loadAPIHandlers(r, apiFolder); err != nil {
+	if err = loadAPIHandlers(r, apiFolder, middlewares); err != nil {
 		log.Fatal("Error loading handlers:", err)
 		return
 	}
@@ -120,7 +121,7 @@ func loadPackage(path string) (map[string]interface{}, error) {
 	return routeHandler, nil
 }
 
-func loadAPIHandlers(r *gin.Engine, basePath string) error {
+func loadAPIHandlers(r *gin.Engine, basePath string, middlewares map[string]func(*gin.Context)) error {
 	return filepath.Walk(basePath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -143,8 +144,10 @@ func loadAPIHandlers(r *gin.Engine, basePath string) error {
 			}
 
 			routePath := "/api" + path[len(basePath):len(path)-len(info.Name())]
+			routeMiddlewares := middleware.GetMiddleware(routePath, middlewares)
 			for protocol, handlerFunc := range routeHandler {
-				r.Handle(protocol, routePath, handlerFunc.(func(*gin.Context)))
+				routeMiddlewares = append(routeMiddlewares, handlerFunc.(func(*gin.Context)))
+				r.Handle(protocol, routePath, routeMiddlewares...)
 			}
 		}
 		return nil
