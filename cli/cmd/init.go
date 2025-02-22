@@ -146,8 +146,7 @@ func InitProject(ProjectName string) {
 	mainFileContent := `package main
 
 import (
-	"fmt"
-	"net/http"
+	// Imports
 )
 
 func main() {

@@ -22,7 +22,6 @@ func main() {
 
 	rootCmd.AddCommand(cmd.InitCmd)  //Ajout de la commande init dans la commande root
 	rootCmd.AddCommand(cmd.RouteCmd) //Ajout de la commande route dans la commande root
-	rootCmd.AddCommand(cmd.ServeCmd) //Ajout de la commande serve dans la commande root
 	rootCmd.AddCommand(cmd.ModelCmd) //Ajout de la commande model dans la commande root
 
 	if rootCmdError := rootCmd.Execute(); rootCmdError != nil {
