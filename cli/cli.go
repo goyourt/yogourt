@@ -12,11 +12,11 @@ func main() {
 
 	/* Commande root */
 	var rootCmd = &cobra.Command{
-		Use:   "goyourt",
-		Short: "GOyourt CLI",
-		Long:  "Ceci est un CLI pour le package GOyourt.",
+		Use:   "yogourt",
+		Short: "yogourt CLI",
+		Long:  "Ceci est un CLI pour le package yogourt.",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("Bienvenue dans GOyourt !")
+			fmt.Println("Bienvenue dans yogourt !")
 		},
 	}
 

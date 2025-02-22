@@ -59,7 +59,7 @@ func CreateModel() {
 
 	// Vérifie si config.yaml existe
 	if _, err := os.Stat(ProjectName + "/config.yaml"); os.IsNotExist(err) {
-		fmt.Println("❌ Fichier config.yaml non trouvé, veuillez entrer la commande suivante: goyourt init project_name")
+		fmt.Println("❌ Fichier config.yaml non trouvé, veuillez entrer la commande suivante: yogourt init project_name")
 		return
 	} else {
 		/* --- Début du wizard --- */
@@ -74,8 +74,15 @@ func CreateModel() {
 			fmt.Println(green("Nom du modèle: ", modelName))
 		}
 
+		// Type d'ID
+		idType := ""
+		survey.AskOne(&survey.Select{
+			Message: blue("Quel type d'ID voulez-vous ?"),
+			Options: []string{"Int (auto-incrémenté)", "UUID"},
+		}, &idType)
+
 		// Nombre de champs
-		fmt.Printf("%s ", blue("Combien de champs voulez-vous ajouter dans ce modèle ? (ID ajouté automatiquement)\n"))
+		fmt.Printf("%s ", blue("Combien de champs supplémentaires voulez-vous ajouter dans ce modèle ?\n"))
 		var fieldCountStr string
 		fmt.Scanln(&fieldCountStr)
 		fieldCount, err := strconv.Atoi(fieldCountStr) // Convertion de la chaine de caracteres en nombre
@@ -83,7 +90,7 @@ func CreateModel() {
 			fmt.Println("❌ Nombre invalide, veuillez entrer un entier positif.")
 			return
 		} else {
-			fmt.Println(green("Le modèle " + modelName + " aura " + fieldCountStr + " champs."))
+			fmt.Println(green("Le modèle " + modelName + " aura " + fieldCountStr + " champs supplémentaires."))
 		}
 
 		// Création d'un slice pour les champs
@@ -149,7 +156,12 @@ import (
 
 `
 		modelFileContent += fmt.Sprintf("type %s struct {\n", modelName)
-		modelFileContent += fmt.Sprintf("\tID int \t`gorm:\"primaryKey;not null;unique\" json:\"ID\"`\n")
+		// Ajout de l'ID selon le type (ID ou UUID)
+		if idType == "UUID" {
+			modelFileContent += "\tID string \t`gorm:\"type:uuid;default:uuid_generate_v4();primaryKey\" json:\"id\"`\n"
+		} else {
+			modelFileContent += "\tID int \t`gorm:\"primaryKey;autoIncrement;not null;unique\" json:\"id\"`\n"
+		}
 
 		// Ajoute les champs
 		for _, field := range fields {

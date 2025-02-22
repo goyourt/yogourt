@@ -76,7 +76,6 @@ version: "1.0.0"
 mode: "development"
 
 server:
-  host: "127.0.0.1"
   port: 8080
   cors: true
 
@@ -88,13 +87,6 @@ database:
   port: 5432
   dbname: "mydb"
 
-auth:
-  jwt_secret: "supersecretkey"
-  token_expiry: 3600
-
-logs:
-  level: "debug"
-  file: "logs/app.log"
 `
 
 	file.WriteString(configFileContent) //Ecriture du contenu dans le fichier config

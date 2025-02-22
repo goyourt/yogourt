@@ -147,6 +147,6 @@ func ` + routeName + `Handler(w http.ResponseWriter, r *http.Request) {
 		/* --- Fin modification du fichier main.go --- */
 	} else {
 		fmt.Println("Les dossiers `routes` et `handlers` n'existent pas.")
-		fmt.Println("Veuillez entrer la commande suivante: goyourt init projectName")
+		fmt.Println("Veuillez entrer la commande suivante: yogourt init projectName")
 	}
 }
