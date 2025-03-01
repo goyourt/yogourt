@@ -37,6 +37,7 @@ func CreateModel() {
 		fmt.Println("❌ Erreur de chargement du fichier .env")
 		return
 	}
+
 	// Récupèration des variables d'environnement
 	ModelFolder := os.Getenv("MODEL_FOLDER")
 	ProjectName := os.Getenv("PROJECT_NAME")

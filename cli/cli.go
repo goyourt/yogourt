@@ -1,8 +1,9 @@
 package main
 
 import (
-	"CLI_GO/cli/cmd"
 	"fmt"
+
+	"github.com/goyourt/yogourt/cmd"
 
 	"github.com/spf13/cobra"
 )
@@ -20,9 +21,10 @@ func main() {
 		},
 	}
 
-	rootCmd.AddCommand(cmd.InitCmd)  //Ajout de la commande init dans la commande root
-	rootCmd.AddCommand(cmd.RouteCmd) //Ajout de la commande route dans la commande root
-	rootCmd.AddCommand(cmd.ModelCmd) //Ajout de la commande model dans la commande root
+	rootCmd.AddCommand(cmd.InitCmd)      //Ajout de la commande init dans la commande root
+	rootCmd.AddCommand(cmd.RouteCmd)     //Ajout de la commande route dans la commande root
+	rootCmd.AddCommand(cmd.ModelCmd)     //Ajout de la commande model dans la commande root
+	rootCmd.AddCommand(cmd.MigrationCmd) //Ajout de la commande migration dans la commande root
 
 	if rootCmdError := rootCmd.Execute(); rootCmdError != nil {
 		fmt.Printf("Erreur de chargement du CLI: %v", rootCmdError)
