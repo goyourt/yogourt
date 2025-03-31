@@ -26,6 +26,7 @@ var InitCmd = &cobra.Command{
 		}
 		InitProject(ProjectName)
 		CreateConfigFile(ProjectName)
+		createMiddlewareFile(ProjectName)
 	},
 }
 
@@ -37,13 +38,6 @@ func updateEnvFile(envPath, projectName string) error {
 	if err != nil {
 		return fmt.Errorf("Impossible de lire le fichier .env: %w", err)
 	}
-
-	// Variables à ajouter au .env
-	envMap["PROJECT_NAME"] = projectName
-	envMap["HANDLER_FOLDER"] = projectName + "/handlers/"
-	envMap["MAIN_FILE"] = projectName + "/main.go"
-	envMap["ROUTE_FOLDER"] = projectName + "/routes/"
-	envMap["MODEL_FOLDER"] = projectName + "/models/"
 
 	// Construction du nouveau contenu du fichier .env
 	var newEnvContent strings.Builder
@@ -87,12 +81,62 @@ database:
   port: 5432
   dbname: "mydb"
 
+paths:
+  model_path: "my_api/models/"
+  project_name: "my_api"
+  main_file_path: "my_api/main.go"
+  route_path: "my_api/routes/"
+
 `
 
 	file.WriteString(configFileContent) //Ecriture du contenu dans le fichier config
 }
 
 /* --- Fin création du fichier config --- */
+
+/* --- Création du fichier middleware --- */
+func createMiddlewareFile(ProjectName string) {
+
+	/* Dossier middleware - présent dans le dossier principal */
+	MiddlewareFolder := ProjectName + "/middleware/"
+
+	middlewareFolderError := os.Mkdir(MiddlewareFolder, os.ModePerm)
+
+	if middlewareFolderError != nil {
+		fmt.Printf("Erreur lors de la création du dossier middleware: %v \n", middlewareFolderError)
+		return
+	}
+
+	//Création du fichier middleware
+	MiddlewareFile := MiddlewareFolder + "middleware.go"
+
+	file, middlewareFileError := os.Create(MiddlewareFile)
+	if middlewareFileError != nil {
+		fmt.Printf("Erreur lors de la création du fichier middleware: %v \n", middlewareFileError)
+		return
+	}
+	defer file.Close() //Fermeture du fichier config
+
+	middlewareFileContent := `package middleware
+
+import (
+	"github.com/gin-gonic/gin"
+)
+
+var Callbacks = map[string]func(*gin.Context){
+	"/":          base,
+}
+
+func base(c *gin.Context) {
+	c.Next()
+}
+
+`
+
+	file.WriteString(middlewareFileContent) //Ecriture du contenu dans le fichier middleware
+}
+
+/* --- Fin création du fichier middleware --- */
 
 /* --- Fonction pour la commande "init" du package --- */
 func InitProject(ProjectName string) {

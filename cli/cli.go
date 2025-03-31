@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/goyourt/yogourt/cmd"
-
 	"github.com/spf13/cobra"
 )
 

@@ -27,6 +27,13 @@ type Config struct {
 		Port     int    `yaml:"port"`
 		DBName   string `yaml:"dbname"`
 	} `yaml:"database"`
+
+	Paths struct {
+		ModelFolder string `yaml:"model_folder"`
+		ProjectName string `yaml:"project_name"`
+		MainFile    string `yaml:"main_file"`
+		RouteFolder string `yaml:"route_folder"`
+	} `yaml:"paths"`
 }
 
 // Lecture et parse du fichier config
