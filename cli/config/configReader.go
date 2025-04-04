@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v2"
 )
 
@@ -39,17 +38,7 @@ type Config struct {
 // Lecture et parse du fichier config
 func LoadConfig() (*Config, error) {
 
-	// Chargement du fichier .env
-	err := godotenv.Load(".env")
-	if err != nil {
-		fmt.Println("❌ Erreur de chargement du fichier .env")
-		return nil, err
-	}
-
-	// Récupèration des variables d'environnement
-	ProjectName := os.Getenv("PROJECT_NAME")
-
-	file, err := os.ReadFile(ProjectName + "/config.yaml")
+	file, err := os.ReadFile("./config.yaml")
 	if err != nil {
 		return nil, fmt.Errorf("❌ Impossible de lire config.yaml : %v", err)
 	}

@@ -1,11 +1,11 @@
 package cmd
 
 import (
+	"cli/config"
+	"cli/database"
 	"fmt"
 	"os"
 
-	"github.com/goyourt/yogourt/database"
-	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
 
@@ -23,24 +23,19 @@ var MigrationCmd = &cobra.Command{
 
 func migrate(modelName string) {
 
-	// Chargement du fichier .env
-	err := godotenv.Load(".env")
+	// Vérification et lecture du fichier config
+	cfg, err := config.LoadConfig()
 	if err != nil {
-		fmt.Println("❌ Erreur de chargement du fichier .env")
-		return
-	}
-
-	// Récupèration des variables d'environnement
-	ProjectName := os.Getenv("PROJECT_NAME")
-	ModelFolder := os.Getenv("MODEL_FOLDER")
-
-	if _, err := os.Stat(ProjectName + "/config.yaml"); os.IsNotExist(err) {
-		fmt.Println("❌ Fichier config.yaml non trouvé, veuillez entrer la commande suivante: yogourt init project_name")
+		fmt.Printf(`❌ Fichier config.yaml non trouvé, assurez vous que celui-ci se trouve à la racine de votre projet ou
+   que vous avez entré la commande suivante: yogourt init project_name`)
 		return
 	} else {
 
+		// Récupération de la variable d'environnement depuis le fichier config
+		ModelFolder := cfg.Paths.ModelFolder
+
 		if _, err := os.Stat(ModelFolder + "/" + modelName + "Model.go"); os.IsNotExist(err) {
-			fmt.Println("❌ Aucun modèle trouvé, veuillez créer un model avec la commande suivante: yogourt model model_name")
+			fmt.Println("❌ Aucun modèle trouvé, veuillez créer un modèle avec la commande suivante: yogourt model model_name")
 			return
 		} else {
 			// Initialissation de la base de données

@@ -3,9 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"strings"
 
-	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
 
@@ -17,46 +15,16 @@ var InitCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1), //Attends un seul argument
 	Run: func(cmd *cobra.Command, args []string) {
 		ProjectName := args[0]
-
-		// Met à jour ton fichier .env interne avec le nom du projet
-		err := updateEnvFile(".env", ProjectName)
-		if err != nil {
-			fmt.Printf("❌ Erreur lors de la mise à jour du fichier .env : %v\n", err)
-			return
-		}
-		InitProject(ProjectName)
 		CreateConfigFile(ProjectName)
+		InitProject(ProjectName)
 		createMiddlewareFile(ProjectName)
 	},
-}
-
-// Mise à jour du fichier .env interne
-func updateEnvFile(envPath, projectName string) error {
-
-	// Charge le fichier .env existant
-	envMap, err := godotenv.Read(envPath)
-	if err != nil {
-		return fmt.Errorf("Impossible de lire le fichier .env: %w", err)
-	}
-
-	// Construction du nouveau contenu du fichier .env
-	var newEnvContent strings.Builder
-	for key, value := range envMap {
-		newEnvContent.WriteString(fmt.Sprintf("%s=\"%s\"\n", key, value))
-	}
-
-	// Écriture dans le fichier .env interne
-	err = os.WriteFile(envPath, []byte(newEnvContent.String()), 0644) //Permet l'ecriture dans le fichier avec l'autorisation lecture + ecriture (0644)
-	if err != nil {
-		return fmt.Errorf("Impossible d'écrire dans le fichier .env: %w", err)
-	}
-	return nil
 }
 
 /* --- Création du fichier config --- */
 func CreateConfigFile(ProjectName string) {
 	//Création du fichier config
-	ConfigFile := ProjectName + "/config.yaml"
+	ConfigFile := "./config.yaml"
 
 	file, configFileError := os.Create(ConfigFile)
 	if configFileError != nil {
@@ -82,11 +50,10 @@ database:
   dbname: "mydb"
 
 paths:
-  model_path: "my_api/models/"
-  project_name: "my_api"
-  main_file_path: "my_api/main.go"
-  route_path: "my_api/routes/"
-
+  model_folder: "` + ProjectName + `/models/"
+  project_name: "` + ProjectName + `"
+  main_file: "` + ProjectName + `/main.go"
+  route_folder: "` + ProjectName + `/routes/"
 `
 
 	file.WriteString(configFileContent) //Ecriture du contenu dans le fichier config
@@ -192,16 +159,4 @@ func main() {
 	file.WriteString(mainFileContent) //Ecriture du contenu dans le fichier main.go
 
 	fmt.Println("L'environnement a été initialisé avec succès.")
-
-	// Sauvegarde dans un fichier .env
-	err := godotenv.Write(map[string]string{
-		"ROUTE_FOLDER": RouteFolder,
-		"MAIN_FILE":    MainFile,
-		"PROJECT_NAME": ProjectName,
-		"MODEL_FOLDER": ModelFolder,
-	}, ".env")
-	if err != nil {
-		fmt.Println("Erreur lors de la création du fichier .env:", err)
-		return
-	}
 }

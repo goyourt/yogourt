@@ -1,10 +1,10 @@
 package database
 
 import (
+	"cli/config"
 	"fmt"
 	"log"
 
-	"github.com/goyourt/yogourt/config"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )

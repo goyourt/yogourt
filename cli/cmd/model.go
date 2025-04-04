@@ -3,6 +3,7 @@
 package cmd
 
 import (
+	"cli/config"
 	"fmt"
 	"os"
 	"regexp"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/fatih/color"
-	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
 
@@ -31,17 +31,6 @@ func CreateModel() {
 	green := color.New(color.FgGreen).SprintFunc()
 	blue := color.New(color.FgBlue).SprintFunc()
 
-	// Chargement du fichier .env
-	err := godotenv.Load(".env")
-	if err != nil {
-		fmt.Println("❌ Erreur de chargement du fichier .env")
-		return
-	}
-
-	// Récupèration des variables d'environnement
-	ModelFolder := os.Getenv("MODEL_FOLDER")
-	ProjectName := os.Getenv("PROJECT_NAME")
-
 	// Structure d'un champ
 	type Field struct {
 		Name       string
@@ -55,14 +44,19 @@ func CreateModel() {
 		Fields []Field
 	}
 
-	// Regex pour vérifier que le nom du modele et des champs (lettres en minuscules/majuscules)
-	var validName = regexp.MustCompile(`^[a-zA-Z]+$`)
-
-	// Vérifie si config.yaml existe
-	if _, err := os.Stat(ProjectName + "/config.yaml"); os.IsNotExist(err) {
-		fmt.Println("❌ Fichier config.yaml non trouvé, veuillez entrer la commande suivante: yogourt init project_name")
+	// Vérification et lecture du fichier config
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		fmt.Printf(`❌ Fichier config.yaml non trouvé, assurez vous que celui-ci se trouve à la racine de votre projet ou
+   que vous avez entré la commande suivante: yogourt init project_name`)
 		return
 	} else {
+		// Récupération de la variable d'environnement depuis le fichier config
+		ModelFolder := cfg.Paths.ModelFolder
+
+		// Regex pour vérifier que le nom du modele et des champs (lettres en minuscules/majuscules)
+		var validName = regexp.MustCompile(`^[a-zA-Z]+$`)
+
 		/* --- Début du wizard --- */
 		// Nom du modele
 		fmt.Printf("%s ", blue("Quel est le nom du modèle ?\n"))

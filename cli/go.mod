@@ -1,4 +1,4 @@
-module github.com/goyourt/yogourt
+module cli
 
 go 1.24
 
