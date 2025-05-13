@@ -15,6 +15,7 @@ var InitCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1), //Attends un seul argument
 	Run: func(cmd *cobra.Command, args []string) {
 		ProjectName := args[0]
+
 		CreateConfigFile(ProjectName)
 		InitProject(ProjectName)
 		createMiddlewareFile(ProjectName)
@@ -23,6 +24,7 @@ var InitCmd = &cobra.Command{
 
 /* --- Création du fichier config --- */
 func CreateConfigFile(ProjectName string) {
+
 	//Création du fichier config
 	ConfigFile := "./config.yaml"
 
@@ -159,4 +161,9 @@ func main() {
 	file.WriteString(mainFileContent) //Ecriture du contenu dans le fichier main.go
 
 	fmt.Println("L'environnement a été initialisé avec succès.")
+}
+
+/* --- Ajout de la commande init à la commande root --- */
+func init() {
+	rootCmd.AddCommand(InitCmd)
 }

@@ -45,7 +45,7 @@ func CreateModel() {
 	}
 
 	// Vérification et lecture du fichier config
-	cfg, err := config.LoadConfig()
+	cfg, err := config.LoadConfig(ConfigPath)
 	if err != nil {
 		fmt.Printf(`❌ Fichier config.yaml non trouvé, assurez vous que celui-ci se trouve à la racine de votre projet ou
    que vous avez entré la commande suivante: yogourt init project_name`)
@@ -237,4 +237,9 @@ import (
 
 		fmt.Println(green("✅ Modèle " + modelName + " créé avec succès."))
 	}
+}
+
+/* --- Ajout de la commande model à la commande root --- */
+func init() {
+	rootCmd.AddCommand(ModelCmd)
 }

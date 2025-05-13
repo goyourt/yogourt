@@ -24,7 +24,7 @@ var MigrationCmd = &cobra.Command{
 func migrate(modelName string) {
 
 	// Vérification et lecture du fichier config
-	cfg, err := config.LoadConfig()
+	cfg, err := config.LoadConfig(ConfigPath)
 	if err != nil {
 		fmt.Printf(`❌ Fichier config.yaml non trouvé, assurez vous que celui-ci se trouve à la racine de votre projet ou
    que vous avez entré la commande suivante: yogourt init project_name`)
@@ -39,7 +39,7 @@ func migrate(modelName string) {
 			return
 		} else {
 			// Initialissation de la base de données
-			database.InitDatabase()
+			database.InitDatabase(ConfigPath)
 
 			// Migration
 			err := database.DB.AutoMigrate("&" + ModelFolder + "." + modelName + "{}")
@@ -50,4 +50,9 @@ func migrate(modelName string) {
 			}
 		}
 	}
+}
+
+/* --- Ajout de la commande migration à la commande root --- */
+func init() {
+	rootCmd.AddCommand(MigrationCmd)
 }

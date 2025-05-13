@@ -36,9 +36,9 @@ type Config struct {
 }
 
 // Lecture et parse du fichier config
-func LoadConfig() (*Config, error) {
+func LoadConfig(path string) (*Config, error) {
 
-	file, err := os.ReadFile("./config.yaml")
+	file, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("❌ Impossible de lire config.yaml : %v", err)
 	}

@@ -13,8 +13,8 @@ import (
 var DB *gorm.DB
 
 // Chargement de la base de données
-func InitDatabase() {
-	cfg, err := config.LoadConfig()
+func InitDatabase(configPathAdded string) {
+	cfg, err := config.LoadConfig(configPathAdded)
 	if err != nil {
 		log.Fatal(err)
 	}
