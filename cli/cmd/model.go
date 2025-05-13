@@ -8,6 +8,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/fatih/color"
@@ -153,7 +154,7 @@ import (
 		modelFileContent += fmt.Sprintf("type %s struct {\n", modelName)
 		// Ajout de l'ID selon le type (ID ou UUID)
 		if idType == "UUID" {
-			modelFileContent += "\tID string \t`gorm:\"type:uuid;default:uuid_generate_v4();primaryKey\" json:\"id\"`\n"
+			modelFileContent += "\tID string \t`gorm:\"type:uuid;default:gen_random_uuid();primaryKey\" json:\"id\"`\n"
 		} else {
 			modelFileContent += "\tID int \t`gorm:\"primaryKey;autoIncrement;not null;unique\" json:\"id\"`\n"
 		}
@@ -236,6 +237,49 @@ import (
 		}
 
 		fmt.Println(green("✅ Modèle " + modelName + " créé avec succès."))
+
+		/* --- Ajout du model dans registry.go --- */
+		registryFile := ModelFolder + "registry.go"
+
+		registryFileContent, err := os.ReadFile(registryFile) //Lecture du fichier
+		if err != nil {
+			fmt.Printf("Erreur lors de la lecture du fichier registry.go: %v \n", err)
+		}
+
+		// Convertion du contenu en chaîne de caractères
+		contentStr := string(registryFileContent)
+
+		// Vérifie si le modèle est déjà présent
+		if strings.Contains(contentStr, `"`+modelName+`": &`+modelName+`{}`) {
+			fmt.Println("✅ Le modèle est déjà présent dans registry.go")
+			return
+		}
+
+		// Recherche l'endroit où insérer le nouveau modèle
+		mapMarker := "map[string]interface{}{"
+		index := strings.Index(contentStr, mapMarker)
+		if index == -1 {
+			fmt.Println("❌ Impossible de trouver la map Models dans registry.go")
+			return
+		}
+
+		// Point d'insertion : juste après "map[string]interface{}{"
+		insertionPoint := index + len(mapMarker)
+
+		// Construire la nouvelle ligne du modèle
+		newEntry := `"` + modelName + `": &` + modelName + `{},`
+
+		// Insertion propre (ajoute avec retour à la ligne et indentation)
+		newContent := contentStr[:insertionPoint] + "\n\t" + newEntry + contentStr[insertionPoint:]
+
+		// Réécrire le fichier
+		err = os.WriteFile(registryFile, []byte(newContent), 0644)
+		if err != nil {
+			fmt.Printf("❌ Erreur lors de l'écriture du fichier registry.go: %v\n", err)
+			return
+		}
+
+		fmt.Println("✅ Modèle ajouté à registry.go avec succès")
 	}
 }
 

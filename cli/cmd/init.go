@@ -138,6 +138,72 @@ func InitProject(ProjectName string) {
 		return
 	}
 
+	/* Fichier modelRegistry - présent dans le dossier models */
+	ModelRegistryFile := ModelFolder + "registry.go"
+
+	file, modelRegistryError := os.Create(ModelRegistryFile)
+
+	if modelRegistryError != nil {
+		fmt.Printf("Erreur lors de la création du fichier models/registry.go: %v \n", modelRegistryError)
+		return
+	}
+	defer file.Close() //Fermeture du fichier registry.go
+
+	registryFileContent := `package models
+
+import (
+	"` + ProjectName + `/models"
+)
+
+var Models = map[string]interface{}{
+}
+`
+
+	file.WriteString(registryFileContent) //Ecriture du contenu dans le fichier registry.go
+
+	/* --- Création du fichier cmd/migrate.go --- */
+	/* Dossier cmd */
+	CmdFolder := ProjectName + "/cmd/"
+
+	cmdFolderError := os.Mkdir(CmdFolder, os.ModePerm)
+
+	if cmdFolderError != nil {
+		fmt.Printf("Erreur lors de la création du dossier cmd: %v \n", cmdFolderError)
+		return
+	}
+
+	/* Fichier migrate.go */
+	MigrateFile := CmdFolder + "/migrate.go"
+
+	file, migrateFileError := os.Create(MigrateFile)
+	if migrateFileError != nil {
+		fmt.Printf("Erreur lors de la création du fichier migrate: %v \n", migrateFileError)
+		return
+	}
+	defer file.Close() //Fermeture du fichier migrate
+
+	migrationFileContent := `package main
+
+import (
+	"log"
+	"` + ProjectName + `/models"
+)
+
+func main() {
+	// Initialisation de la base de données
+	database.InitDatabase("../config.yaml")
+
+	for name, model := range models.Models {
+		if err := database.DB.AutoMigrate(model); err != nil {
+			log.Printf("❌ Échec de la migration du modèle '%s': %v", name, err)
+		} else {
+			log.Printf("✅ Migration réussie pour le modèle '%s'", name)
+		}
+	}
+}
+`
+	file.WriteString(migrationFileContent) //Ecriture du contenu dans le fichier migrate.go
+
 	/* Fichier main - présent dans le dossier principal */
 	MainFile := ProjectName + "/main.go"
 

@@ -5,6 +5,7 @@ import (
 	"cli/database"
 	"fmt"
 	"os"
+	"os/exec"
 
 	"github.com/spf13/cobra"
 )
@@ -19,6 +20,42 @@ var MigrationCmd = &cobra.Command{
 		modelName := args[0]
 		migrate(modelName)
 	},
+}
+
+// Cette fonction sert à exécuter le fichier migrate.go du dossier cmd
+func executeMigration() {
+
+	// Vérification et lecture du fichier config
+	cfg, err := config.LoadConfig(ConfigPath)
+	if err != nil {
+		fmt.Printf(`❌ Fichier config.yaml non trouvé, assurez vous que celui-ci se trouve à la racine de votre projet ou
+   que vous avez entré la commande suivante: yogourt init project_name`)
+		return
+	} else {
+
+		// Définir le chemin du projet de l'utilisateur (chemin vers le projet de l'utilisateur)
+		ProjectName := cfg.Paths.ProjectName
+		pathToUserProject := "./" + ProjectName
+
+		// Crée une commande pour exécuter `go run cmd/migrate/main.go`
+		cmd := exec.Command("go", "run", "./cmd/migrate.go")
+		cmd.Dir = pathToUserProject // Définit le répertoire de travail du projet
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		// Exécution de la commande
+		err := cmd.Run()
+		if err != nil {
+			fmt.Println("❌ Erreur lors de la migration :", err)
+		} else {
+			fmt.Println("✅ Migration réussie")
+		}
+	}
+}
+
+/* --- Ajout de la commande migration à la commande root --- */
+func init() {
+	rootCmd.AddCommand(MigrationCmd)
 }
 
 func migrate(modelName string) {
@@ -38,16 +75,11 @@ func migrate(modelName string) {
 			fmt.Println("❌ Aucun modèle trouvé, veuillez créer un modèle avec la commande suivante: yogourt model model_name")
 			return
 		} else {
-			// Initialissation de la base de données
+			// Initialisation BDD
 			database.InitDatabase(ConfigPath)
 
-			// Migration
-			err := database.DB.AutoMigrate("&" + ModelFolder + "." + modelName + "{}")
-			if err != nil {
-				fmt.Println("❌ Erreur de migration :", err)
-			} else {
-				fmt.Println("✅ Migration réussie")
-			}
+			// Migration via le fichier cmd/migrate/main.go
+			executeMigration()
 		}
 	}
 }
