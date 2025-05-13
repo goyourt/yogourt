@@ -26,7 +26,7 @@ func loadPackage(path string) (map[string]interface{}, error) {
 	return routeHandler, nil
 }
 
-func loadAPIHandlers(r *gin.Engine, basePath string, middlewares map[string]func(*gin.Context)) error {
+func loadAPIHandlers(r *gin.Engine, basePath string) error {
 	return filepath.Walk(basePath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -39,7 +39,7 @@ func loadAPIHandlers(r *gin.Engine, basePath string, middlewares map[string]func
 			}
 
 			routePath := "/api" + path[len(basePath):len(path)-len(info.Name())]
-			routeMiddlewares := middleware.GetMiddleware(routePath, middlewares)
+			routeMiddlewares := middleware.GetMiddleware(routePath)
 			for protocol, handlerFunc := range routeHandler {
 				routeMiddlewares = append(routeMiddlewares, handlerFunc.(func(*gin.Context)))
 				r.Handle(protocol, routePath, routeMiddlewares...)
