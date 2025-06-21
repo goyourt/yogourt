@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -22,8 +23,21 @@ var InitCmd = &cobra.Command{
 	},
 }
 
+/* Fonction pour l'initialisation du fichier de logs */
+func InitLogsFile() {
+
+	logFile, err := os.OpenFile("logs.txt", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.SetOutput(logFile)
+}
+
 /* --- Création du fichier config --- */
 func CreateConfigFile(ProjectName string) {
+
+	// Initialisation du fichier de logs
+	InitLogsFile()
 
 	//Création du fichier config
 	ConfigFile := "./config.yaml"
@@ -31,6 +45,7 @@ func CreateConfigFile(ProjectName string) {
 	file, configFileError := os.Create(ConfigFile)
 	if configFileError != nil {
 		fmt.Printf("Erreur lors de la création du fichier config: %v \n", configFileError)
+		log.Printf("ERROR: %s\n", configFileError) // Ecriture des logs
 		return
 	}
 	defer file.Close() //Fermeture du fichier config
@@ -66,6 +81,9 @@ paths:
 /* --- Création du fichier middleware --- */
 func createMiddlewareFile(ProjectName string) {
 
+	// Initialisation du fichier de logs
+	InitLogsFile()
+
 	/* Dossier middleware - présent dans le dossier principal */
 	MiddlewareFolder := ProjectName + "/middleware/"
 
@@ -73,6 +91,7 @@ func createMiddlewareFile(ProjectName string) {
 
 	if middlewareFolderError != nil {
 		fmt.Printf("Erreur lors de la création du dossier middleware: %v \n", middlewareFolderError)
+		log.Printf("ERROR: %s\n", middlewareFolderError) // Ecriture des logs
 		return
 	}
 
@@ -82,6 +101,7 @@ func createMiddlewareFile(ProjectName string) {
 	file, middlewareFileError := os.Create(MiddlewareFile)
 	if middlewareFileError != nil {
 		fmt.Printf("Erreur lors de la création du fichier middleware: %v \n", middlewareFileError)
+		log.Printf("ERROR: %s\n", middlewareFileError) // Ecriture des logs
 		return
 	}
 	defer file.Close() //Fermeture du fichier config
@@ -110,11 +130,15 @@ func base(c *gin.Context) {
 /* --- Fonction pour la commande "init" du package --- */
 func InitProject(ProjectName string) {
 
+	// Initialisation du fichier de logs
+	InitLogsFile()
+
 	/* Dossier principal du package */
 	projectNameError := os.Mkdir(ProjectName, os.ModePerm) //Création du dossier principal + attribution des droits
 
 	if projectNameError != nil {
 		fmt.Printf("Erreur lors de la création de l'environnement de travail: %v \n", projectNameError)
+		log.Printf("ERROR: %s\n", projectNameError) // Ecriture des logs
 		return
 	}
 
@@ -125,6 +149,7 @@ func InitProject(ProjectName string) {
 
 	if routeFolderError != nil {
 		fmt.Printf("Erreur lors de la création du dossier routes: %v \n", routeFolderError)
+		log.Printf("ERROR: %s\n", routeFolderError) // Ecriture des logs
 		return
 	}
 
@@ -135,6 +160,7 @@ func InitProject(ProjectName string) {
 
 	if modelFolderError != nil {
 		fmt.Printf("Erreur lors de la création du dossier models: %v \n", modelFolderError)
+		log.Printf("ERROR: %s\n", modelFolderError) // Ecriture des logs
 		return
 	}
 
@@ -145,6 +171,7 @@ func InitProject(ProjectName string) {
 
 	if modelRegistryError != nil {
 		fmt.Printf("Erreur lors de la création du fichier models/registry.go: %v \n", modelRegistryError)
+		log.Printf("ERROR: %s\n", modelRegistryError) // Ecriture des logs
 		return
 	}
 	defer file.Close() //Fermeture du fichier registry.go
@@ -169,6 +196,7 @@ var Models = map[string]interface{}{
 
 	if cmdFolderError != nil {
 		fmt.Printf("Erreur lors de la création du dossier cmd: %v \n", cmdFolderError)
+		log.Printf("ERROR: %s\n", cmdFolderError) // Ecriture des logs
 		return
 	}
 
@@ -178,6 +206,7 @@ var Models = map[string]interface{}{
 	file, migrateFileError := os.Create(MigrateFile)
 	if migrateFileError != nil {
 		fmt.Printf("Erreur lors de la création du fichier migrate: %v \n", migrateFileError)
+		log.Printf("ERROR: %s\n", migrateFileError) // Ecriture des logs
 		return
 	}
 	defer file.Close() //Fermeture du fichier migrate
@@ -210,6 +239,7 @@ func main() {
 	file, mainFileError := os.Create(MainFile)
 	if mainFileError != nil {
 		fmt.Printf("Erreur lors de la création du fichier main: %v \n", mainFileError)
+		log.Printf("ERROR: %s\n", mainFileError) // Ecriture des logs
 		return
 	}
 	defer file.Close() //Fermeture du fichier main
@@ -227,6 +257,9 @@ func main() {
 	file.WriteString(mainFileContent) //Ecriture du contenu dans le fichier main.go
 
 	fmt.Println("L'environnement a été initialisé avec succès.")
+
+	/* --- Ecriture des logs --- */
+	log.Printf("Environnement initialisé avec succès: %s\n", ProjectName)
 }
 
 /* --- Ajout de la commande init à la commande root --- */

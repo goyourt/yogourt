@@ -5,6 +5,7 @@ package cmd
 import (
 	"cli/config"
 	"fmt"
+	"log"
 	"os"
 	"regexp"
 	"strconv"
@@ -45,11 +46,19 @@ func CreateModel() {
 		Fields []Field
 	}
 
+	// Initialisation du fichier de logs
+	logFile, err := os.OpenFile("logs.txt", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.SetOutput(logFile)
+
 	// Vérification et lecture du fichier config
 	cfg, err := config.LoadConfig(ConfigPath)
 	if err != nil {
 		fmt.Printf(`❌ Fichier config.yaml non trouvé, assurez vous que celui-ci se trouve à la racine de votre projet ou
    que vous avez entré la commande suivante: yogourt init project_name`)
+		log.Printf("ERROR: %s\n", err) // Ecriture des logs
 		return
 	} else {
 		// Récupération de la variable d'environnement depuis le fichier config
@@ -65,6 +74,8 @@ func CreateModel() {
 		fmt.Scanln(&modelName)
 		if modelName == "" || !validName.MatchString(modelName) {
 			fmt.Println("❌ Nom invalide, veuillez entrer un nom en lettres uniquement.")
+			log.Printf("ERROR: %s\n", err) // Ecriture des logs
+
 			return
 		} else {
 			fmt.Println(green("Nom du modèle: ", modelName))
@@ -84,6 +95,7 @@ func CreateModel() {
 		fieldCount, err := strconv.Atoi(fieldCountStr) // Convertion de la chaine de caracteres en nombre
 		if err != nil || fieldCount <= 0 {
 			fmt.Println("❌ Nombre invalide, veuillez entrer un entier positif.")
+			log.Printf("ERROR: %s\n", err) // Ecriture des logs
 			return
 		} else {
 			fmt.Println(green("Le modèle " + modelName + " aura " + fieldCountStr + " champs supplémentaires."))
@@ -137,6 +149,7 @@ func CreateModel() {
 		modelFile, modelFileError := os.Create(newModelFile)
 		if modelFileError != nil {
 			fmt.Printf("❌ Erreur lors de la création du model: %s\n", modelFileError)
+			log.Printf("ERROR: %s\n", modelFileError) // Ecriture des logs
 			return
 		}
 		defer modelFile.Close()
@@ -233,6 +246,7 @@ import (
 		_, err = modelFile.WriteString(modelFileContent)
 		if err != nil {
 			fmt.Printf("❌ Erreur d'écriture dans le fichier modèle : %v\n", err)
+			log.Printf("ERROR: %s\n", err) // Ecriture des logs
 			return
 		}
 
@@ -244,6 +258,7 @@ import (
 		registryFileContent, err := os.ReadFile(registryFile) //Lecture du fichier
 		if err != nil {
 			fmt.Printf("Erreur lors de la lecture du fichier registry.go: %v \n", err)
+			log.Printf("ERROR: %s\n", err) // Ecriture des logs
 		}
 
 		// Convertion du contenu en chaîne de caractères
@@ -276,10 +291,12 @@ import (
 		err = os.WriteFile(registryFile, []byte(newContent), 0644)
 		if err != nil {
 			fmt.Printf("❌ Erreur lors de l'écriture du fichier registry.go: %v\n", err)
+			log.Printf("ERROR: %s\n", err) // Ecriture des logs
 			return
 		}
 
 		fmt.Println("✅ Modèle ajouté à registry.go avec succès")
+		log.Printf("Modèle créé avec succès: %s\n", modelName) // Ecriture des logs
 	}
 }
 

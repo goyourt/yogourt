@@ -4,6 +4,7 @@ import (
 	"cli/config"
 	"cli/database"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 
@@ -25,11 +26,19 @@ var MigrationCmd = &cobra.Command{
 // Cette fonction sert à exécuter le fichier migrate.go du dossier cmd
 func executeMigration() {
 
+	// Initialisation du fichier de logs
+	logFile, err := os.OpenFile("logs.txt", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.SetOutput(logFile)
+
 	// Vérification et lecture du fichier config
 	cfg, err := config.LoadConfig(ConfigPath)
 	if err != nil {
 		fmt.Printf(`❌ Fichier config.yaml non trouvé, assurez vous que celui-ci se trouve à la racine de votre projet ou
    que vous avez entré la commande suivante: yogourt init project_name`)
+		log.Printf("ERROR: %s\n", err) // Ecriture des logs
 		return
 	} else {
 
@@ -44,27 +53,25 @@ func executeMigration() {
 		cmd.Stderr = os.Stderr
 
 		// Exécution de la commande
-		err := cmd.Run()
-		if err != nil {
-			fmt.Println("❌ Erreur lors de la migration :", err)
-		} else {
-			fmt.Println("✅ Migration réussie")
-		}
+		cmd.Run()
 	}
 }
 
-/* --- Ajout de la commande migration à la commande root --- */
-func init() {
-	rootCmd.AddCommand(MigrationCmd)
-}
-
 func migrate(modelName string) {
+
+	// Initialisation du fichier de logs
+	logFile, err := os.OpenFile("logs.txt", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.SetOutput(logFile)
 
 	// Vérification et lecture du fichier config
 	cfg, err := config.LoadConfig(ConfigPath)
 	if err != nil {
 		fmt.Printf(`❌ Fichier config.yaml non trouvé, assurez vous que celui-ci se trouve à la racine de votre projet ou
    que vous avez entré la commande suivante: yogourt init project_name`)
+		log.Printf("ERROR: %s\n", err) // Ecriture des logs
 		return
 	} else {
 
@@ -73,6 +80,7 @@ func migrate(modelName string) {
 
 		if _, err := os.Stat(ModelFolder + "/" + modelName + "Model.go"); os.IsNotExist(err) {
 			fmt.Println("❌ Aucun modèle trouvé, veuillez créer un modèle avec la commande suivante: yogourt model model_name")
+			log.Printf("ERROR: %s\n", err) // Ecriture des logs
 			return
 		} else {
 			// Initialisation BDD
