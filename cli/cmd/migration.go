@@ -27,11 +27,7 @@ var MigrationCmd = &cobra.Command{
 func executeMigration() {
 
 	// Initialisation du fichier de logs
-	logFile, err := os.OpenFile("logs.txt", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.SetOutput(logFile)
+	InitLogsFile()
 
 	// Vérification et lecture du fichier config
 	cfg, err := config.LoadConfig(ConfigPath)
