@@ -1,4 +1,0 @@
-2025/06/21 08:58:07 Environnement initialisé avec succès
-2025/06/21 09:50:51 Environnement initialisé avec succès: my_api
-2025/06/21 09:51:05 ERROR: mkdir my_api: Cannot create a file when that file already exists.
-2025/06/21 09:51:05 ERROR: mkdir my_api/middleware/: Cannot create a file when that file already exists.
