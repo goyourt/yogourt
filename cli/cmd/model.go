@@ -155,8 +155,6 @@ func CreateModel() {
 
 import (
 	"fmt"
-
-	"gorm.io/gorm"
 )
 
 `

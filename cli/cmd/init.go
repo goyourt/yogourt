@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 )
@@ -39,18 +40,26 @@ func CreateConfigFile(ProjectName string) {
 	// Initialisation du fichier de logs
 	InitLogsFile()
 
-	//Création du fichier config
-	ConfigFile := "./config.yaml"
+	// Extraire le dossier (ex: "config" depuis "config/config.yaml")
+	configDir := filepath.Dir(ConfigPath)
 
-	file, configFileError := os.Create(ConfigFile)
-	if configFileError != nil {
-		fmt.Printf("Erreur lors de la création du fichier config: %v \n", configFileError)
+	// Créer le dossier si nécessaire (ne fait rien s'il existe déjà)
+	err := os.MkdirAll(configDir, os.ModePerm)
+	if err != nil {
+		log.Fatalf("Erreur lors de la création du dossier: %v\n", err)
+	}
+
+	// Créer (ou écraser) le fichier config
+	file, configFileError := os.Create(ConfigPath)
+	if err != nil {
+		log.Fatalf("Erreur lors de la création du fichier de config: %v\n", configFileError)
 		log.Printf("ERROR: %s\n", configFileError) // Ecriture des logs
 		return
 	}
-	defer file.Close() //Fermeture du fichier config
+	defer file.Close()
 
-	configFileContent := `app_name: "` + ProjectName + `"
+	configFileContent := `
+app_name: "` + ProjectName + `"
 version: "1.0.0"
 mode: "development"
 
@@ -133,11 +142,9 @@ func InitProject(ProjectName string) {
 	// Initialisation du fichier de logs
 	InitLogsFile()
 
-	/* Dossier principal du package */
-	projectNameError := os.Mkdir(ProjectName, os.ModePerm) //Création du dossier principal + attribution des droits
-
+	projectNameError := os.MkdirAll(ProjectName, os.ModePerm)
 	if projectNameError != nil {
-		fmt.Printf("Erreur lors de la création de l'environnement de travail: %v \n", projectNameError)
+		log.Fatalf("Erreur lors de la création de l'environnement de travail: %v \n", projectNameError)
 		log.Printf("ERROR: %s\n", projectNameError) // Ecriture des logs
 		return
 	}
@@ -179,7 +186,7 @@ func InitProject(ProjectName string) {
 	registryFileContent := `package models
 
 import (
-	"` + ProjectName + `/models"
+	"cli/` + ProjectName + `/models"
 )
 
 var Models = map[string]interface{}{
@@ -215,7 +222,7 @@ var Models = map[string]interface{}{
 
 import (
 	"log"
-	"` + ProjectName + `/models"
+	"cli/` + ProjectName + `/models"
 )
 
 func main() {
