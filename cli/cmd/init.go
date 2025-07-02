@@ -53,7 +53,7 @@ func CreateConfigFile(ProjectName string) {
 
 	// Créer (ou écraser) le fichier config
 	file, configFileError := os.Create(configFilePath)
-	if err != nil {
+	if configFileError != nil {
 		log.Fatalf("Erreur lors de la création du fichier de config: %v\n", configFileError)
 		log.Printf("ERROR: %s\n", configFileError) // Ecriture des logs
 		return

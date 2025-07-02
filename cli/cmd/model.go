@@ -70,7 +70,7 @@ func CreateModel() {
 		fmt.Scanln(&modelName)
 		if modelName == "" || !validName.MatchString(modelName) {
 			fmt.Println("❌ Nom invalide, veuillez entrer un nom en lettres uniquement.")
-			log.Printf("ERROR: %s\n", err) // Ecriture des logs
+			log.Printf("ERROR: Nom invalide fourni pour le modèle.") // Ecriture des logs
 
 			return
 		} else {
