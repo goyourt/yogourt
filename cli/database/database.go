@@ -1,18 +1,18 @@
 package database
 
 import (
-	"cli/config"
 	"fmt"
+	"github.com/goyourt/yogourt/cli/config"
 	"log"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
-// Instance globale de la base de données
+// DB Instance globale de la base de données
 var DB *gorm.DB
 
-// Chargement de la base de données
+// InitDatabase Chargement de la base de données
 func InitDatabase(configPathAdded string) {
 	cfg, err := config.LoadConfig(configPathAdded)
 	if err != nil {

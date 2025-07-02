@@ -3,8 +3,8 @@
 package cmd
 
 import (
-	"cli/config"
 	"fmt"
+	"github.com/goyourt/yogourt/cli/config"
 	"log"
 	"os"
 	"regexp"

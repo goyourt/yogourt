@@ -7,7 +7,7 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// Structure du fichier config
+// Config Structure du fichier config
 type Config struct {
 	AppName string `yaml:"app_name"`
 	Version string `yaml:"version"`
@@ -35,7 +35,7 @@ type Config struct {
 	} `yaml:"paths"`
 }
 
-// Lecture et parse du fichier config
+// LoadConfig Lecture et parse du fichier config
 func LoadConfig(path string) (*Config, error) {
 
 	file, err := os.ReadFile(path)
