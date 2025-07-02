@@ -50,6 +50,11 @@ func executeMigration() {
 
 		// Exécution de la commande
 		cmd.Run()
+
+		if err := cmd.Run(); err != nil {
+			fmt.Printf("❌ Échec de la migration: %s\n", err)
+			log.Printf("ERROR: %s\n", err) // Ecriture des logs
+		}
 	}
 }
 
