@@ -40,8 +40,10 @@ func CreateConfigFile(ProjectName string) {
 	// Initialisation du fichier de logs
 	InitLogsFile()
 
+	configFilePath := ProjectName + "/" + ConfigPath
+
 	// Extraire le dossier (ex: "config" depuis "config/config.yaml")
-	configDir := filepath.Dir(ConfigPath)
+	configDir := filepath.Dir(configFilePath)
 
 	// Créer le dossier si nécessaire (ne fait rien s'il existe déjà)
 	err := os.MkdirAll(configDir, os.ModePerm)
@@ -50,7 +52,7 @@ func CreateConfigFile(ProjectName string) {
 	}
 
 	// Créer (ou écraser) le fichier config
-	file, configFileError := os.Create(ConfigPath)
+	file, configFileError := os.Create(configFilePath)
 	if err != nil {
 		log.Fatalf("Erreur lors de la création du fichier de config: %v\n", configFileError)
 		log.Printf("ERROR: %s\n", configFileError) // Ecriture des logs
