@@ -3,12 +3,15 @@ package routing
 import (
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/goyourt/yogourt/middleware"
 	"log"
 	"os"
 	"path/filepath"
 )
 
-func Initialize(apiFolder string, middlewares map[string]func(*gin.Context)) {
+const compiledRootFolder = ".yogourt"
+
+func Initialize(apiFolder string) {
 	basePath, err := os.Getwd()
 	if err != nil {
 		fmt.Println(err)
@@ -23,8 +26,13 @@ func Initialize(apiFolder string, middlewares map[string]func(*gin.Context)) {
 
 	r := gin.Default()
 
-	if err = loadAPIHandlers(r, apiFolder, middlewares); err != nil {
-		log.Fatal("Error loading handlers:", err)
+	err = middleware.LoadMiddlewares(basePath, compiledRootFolder)
+	if err != nil {
+		log.Fatal("Error loading middlewares: ", err)
+		return
+	}
+	if err = loadAPIHandlers(r, apiFolder); err != nil {
+		log.Fatal("Error loading handlers: ", err)
 		return
 	}
 
