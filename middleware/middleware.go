@@ -2,13 +2,14 @@ package middleware
 
 import (
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"plugin"
 	"strings"
+
+	"github.com/gin-gonic/gin"
+	"github.com/goyourt/yogourt/binary"
 )
+
+const middlewaresPath = "/middleware/middleware.go"
+const ignoreChar = "^"
 
 var middlewares map[string]func(*gin.Context)
 
@@ -25,52 +26,28 @@ func GetMiddleware(path string) []gin.HandlerFunc {
 			middlewareList = append(middlewareList, value)
 		} else if value == nil && keyExists { // delete all previous middlewares
 			middlewareList = make([]gin.HandlerFunc, 0)
-		} else if middlewares["^"+route] != nil { // clause to ignore previous middlewares
-			middlewareList = append(make([]gin.HandlerFunc, 0), middlewares["^"+route])
+		} else if middlewares[ignoreChar+route] != nil { // clause to ignore previous middlewares
+			middlewareList = append(make([]gin.HandlerFunc, 0), middlewares[ignoreChar+route])
 		}
 	}
 
 	return middlewareList
 }
 
-func LoadMiddlewares(basePath string, compiledRootFolder string) error {
-	filePath := basePath + "/middleware/middleware.go"
-
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		fmt.Println("Middleware file not found at " + filePath)
-		return nil
-	}
-	pwd, err := os.Getwd()
+func LoadMiddlewares(basePath string) error {
+	filePath := basePath + middlewaresPath
+	newPath, err := binary.CompilePlugin(filePath)
 	if err != nil {
-		return fmt.Errorf("Error getting current working directory: %v", err)
+		return fmt.Errorf("Error compiling middleware plugin: %v", err)
 	}
 
-	relPath, err := filepath.Rel(pwd, filePath)
+	callbacks, err := binary.LoadFunctions(newPath, []string{"Callbacks"})
+
 	if err != nil {
-		return fmt.Errorf("Error getting relative path: %v", err)
-	}
-	newPath := compiledRootFolder + "/" + relPath + ".so"
-
-	cmd := exec.Command("go", "build", "-buildmode=plugin", "-o", newPath, filePath)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	err = cmd.Run()
-	if err != nil {
-		return fmt.Errorf("Error running command: %v", err)
+		return err
 	}
 
-	plg, err := plugin.Open(newPath)
-	if err != nil {
-		return fmt.Errorf("Error opening plugin: %v", err)
-	}
-
-	callbacks, err := plg.Lookup("Callbacks")
-	if err != nil {
-		return fmt.Errorf("Error no Callbacks: %v", err)
-	}
-
-	middlewares = *callbacks.(*map[string]func(*gin.Context))
+	middlewares = *callbacks["Callbacks"].(*map[string]func(*gin.Context))
 
 	return nil
 }
