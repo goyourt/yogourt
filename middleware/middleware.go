@@ -20,12 +20,13 @@ func GetMiddleware(path string) []gin.HandlerFunc {
 		if i >= 0 {
 			route = strings.Join(subroutes[:i], "/")
 		}
-		if route != "" && middlewares[route] != nil {
-			middlewareList = append(middlewareList, middlewares[route])
-
-			if middlewares[route] == nil {
-				middlewareList = make([]gin.HandlerFunc, 0)
-			}
+		value, keyExists := middlewares[route]
+		if route != "" && value != nil {
+			middlewareList = append(middlewareList, value)
+		} else if value == nil && keyExists { // delete all previous middlewares
+			middlewareList = make([]gin.HandlerFunc, 0)
+		} else if middlewares["^"+route] != nil { // clause to ignore previous middlewares
+			middlewareList = append(make([]gin.HandlerFunc, 0), middlewares["^"+route])
 		}
 	}
 
