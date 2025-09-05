@@ -1,0 +1,31 @@
+app_name: "test-app"
+version: "1.0.0"
+mode: "development"
+
+server:
+  port: 1000
+  cors: true
+
+database:
+  type: "type"
+  user: "user"
+  password: "password"
+  host: "host"
+  port: 1000
+  db: "db"
+
+cache:
+  host: "host"
+  port: 1000
+  password: "password"
+  db: 1000
+
+paths:
+  model_folder: "model_folder"
+  project_name: "project_name"
+  main_file: "main_file"
+  api_folder: "api_folder"
+
+security:
+  secret_key: "secret_key"
+  token_expires: 1000 # one day
