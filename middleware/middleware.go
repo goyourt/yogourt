@@ -51,3 +51,7 @@ func LoadMiddlewares(basePath string) error {
 
 	return nil
 }
+
+func SetMiddlewares(mw map[string]func(*gin.Context)) {
+	middlewares = mw
+}
