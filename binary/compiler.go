@@ -23,7 +23,7 @@ func CompilePlugin(filePath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	newPath := compiledRootFolder + relPath + ".so"
+	newPath := compiledRootFolder + "/" + relPath + ".so"
 	fmt.Println("Compiling plugin: ", newPath)
 
 	cmd := exec.Command("go", "build", "-buildmode=plugin", "-o", newPath, filePath)
