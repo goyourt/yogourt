@@ -11,7 +11,7 @@ const ConfigPath = "./config.yaml"
 
 var configData *Config
 
-// Config Structure du fichier config
+// Config Structure of config file
 type Config struct {
 	AppName string `yaml:"app_name"`
 	Version string `yaml:"version"`

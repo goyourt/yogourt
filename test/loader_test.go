@@ -4,15 +4,15 @@ import (
 	"os"
 	"testing"
 
-	"github.com/goyourt/yogourt/binary"
+	"github.com/goyourt/yogourt/compiler"
 )
 
 func TestLoader(t *testing.T) {
 	basePath, _ := os.Getwd()
 	fileToCompile := basePath + "/TestFilesToCompile/FileToCompile.go"
-	newPath, _ := binary.CompilePlugin(fileToCompile)
+	newPath, _ := compiler.CompilePlugin(fileToCompile)
 
-	functions, err := binary.LoadFunctions(newPath, []string{"Test"})
+	functions, err := compiler.LoadFunctions(newPath, []string{"Test"})
 	if err != nil {
 		t.Errorf("Error loading functions: %v", err)
 	}
