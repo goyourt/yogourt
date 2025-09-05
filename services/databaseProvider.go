@@ -4,15 +4,17 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 // DB Instance globale de la base de données
 var DB *gorm.DB
+var Cache *redis.Client
 
 // InitDatabase Chargement de la base de données
-func Init() {
+func InitDB() {
 	cfg := GetConfig()
 
 	// Construction de l'url de connexion à la base de données (sslmode=disable --> SSL désactivé pour connexion en local)
@@ -29,9 +31,26 @@ func Init() {
 	DB = db
 }
 
+func InitCache() {
+	cfg := GetConfig().Cache
+
+	Cache = redis.NewClient(&redis.Options{
+		Addr:     cfg.Host + ":" + cfg.Port,
+		Password: cfg.Password,
+		DB:       cfg.DB,
+	})
+}
+
 func GetDB() *gorm.DB {
 	if DB == nil {
-		Init()
+		InitDB()
 	}
 	return DB
+}
+
+func GetCache() *redis.Client {
+	if Cache == nil {
+		InitCache()
+	}
+	return Cache
 }

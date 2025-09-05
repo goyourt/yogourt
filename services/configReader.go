@@ -31,14 +31,12 @@ type Config struct {
 		DB       string `yaml:"db"`
 	} `yaml:"database"`
 
-	AuthDB struct {
-		Type     string `yaml:"type"`
-		User     string `yaml:"user"`
-		Password string `yaml:"password"`
-		DB       string `yaml:"db"`
+	Cache struct {
 		Host     string `yaml:"host"`
-		Port     int    `yaml:"port"`
-	} `yaml:"auth_db"`
+		Port     string `yaml:"port"`
+		Password string `yaml:"password"`
+		DB       int    `yaml:"db"`
+	} `yaml:"cache"`
 
 	Paths struct {
 		ModelFolder string `yaml:"model_folder"`
