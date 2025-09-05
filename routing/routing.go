@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/goyourt/yogourt/binary"
+	"github.com/goyourt/yogourt/compiler"
 	"github.com/goyourt/yogourt/middleware"
 )
 
@@ -49,12 +49,12 @@ func loadAPIHandlers(r *gin.Engine, basePath string) error {
 		}
 
 		if strings.HasSuffix(info.Name(), ".go") {
-			newPath, err := binary.CompilePlugin(path)
+			newPath, err := compiler.CompilePlugin(path)
 			if err != nil {
 				return fmt.Errorf("error loading or compiling package from %s: %v", path, err)
 			}
 
-			routeHandler, err := binary.LoadFunctions(newPath, []string{"GET", "PUT", "POST", "PATCH", "DELETE"})
+			routeHandler, err := compiler.LoadFunctions(newPath, []string{"GET", "PUT", "POST", "PATCH", "DELETE"})
 			if err != nil {
 				return err
 			}

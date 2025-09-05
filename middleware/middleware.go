@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/goyourt/yogourt/binary"
+	"github.com/goyourt/yogourt/compiler"
 )
 
 const middlewaresPath = "/middleware/middleware.go"
@@ -36,12 +36,12 @@ func GetMiddleware(path string) []gin.HandlerFunc {
 
 func LoadMiddlewares(basePath string) error {
 	filePath := basePath + middlewaresPath
-	newPath, err := binary.CompilePlugin(filePath)
+	newPath, err := compiler.CompilePlugin(filePath)
 	if err != nil {
 		return fmt.Errorf("Error compiling middleware plugin: %v", err)
 	}
 
-	callbacks, err := binary.LoadFunctions(newPath, []string{"Callbacks"})
+	callbacks, err := compiler.LoadFunctions(newPath, []string{"Callbacks"})
 
 	if err != nil {
 		return err

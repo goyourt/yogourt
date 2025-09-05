@@ -4,14 +4,14 @@ import (
 	"os"
 	"testing"
 
-	"github.com/goyourt/yogourt/binary"
+	"github.com/goyourt/yogourt/compiler"
 )
 
 func TestCompiler(t *testing.T) {
 	basePath, _ := os.Getwd()
 	fileToCompile := basePath + "/TestFilesToCompile/FileToCompile.go"
 	exceptedDestination := ".yogourt/TestFilesToCompile/FileToCompile.go.so"
-	newPath, err := binary.CompilePlugin(fileToCompile)
+	newPath, err := compiler.CompilePlugin(fileToCompile)
 
 	if err != nil {
 		t.Errorf("Error compiling plugin: %v", err)
