@@ -5,7 +5,7 @@
 Pour installer le CLI de Yogourt globalement sur votre machine:
 
 ```sh
-go install github.com/goyourt/yogourt/cli@latest
+go install github.com/goyourt/yogourt-cli@latest
 ```
 
 Cela installera le binaire dans votre `$GOPATH/bin` (ou `$GOBIN` si défini). Assurez-vous que ce dossier est dans votre `PATH` pour pouvoir utiliser la commande depuis n'importe où.
@@ -31,6 +31,11 @@ yogourt --help
 ### Yogourt init
 
 When the project is initialized, many files are generated for you:
+
+Before anything, you should run 
+```sh
+go mod tidy
+```
 
 #### Config File
 
