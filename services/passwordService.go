@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/goyourt/yogourt/services/providers"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -20,7 +21,7 @@ func GetHashedPassword(pwd string) (string, error) {
 
 func GetPasswordFailureCount(username string) (int, error) {
 	ctx := context.Background()
-	cache := GetCache()
+	cache := providers.GetCache()
 	since := float64(time.Now().Add(-24 * time.Hour).Unix())
 
 	attempts, err := cache.ZRangeByScore(ctx, username, &redis.ZRangeBy{
@@ -33,7 +34,7 @@ func GetPasswordFailureCount(username string) (int, error) {
 
 func SavePasswordFailure(username string) error {
 	ctx := context.Background()
-	cache := GetCache()
+	cache := providers.GetCache()
 	now := float64(time.Now().Unix())
 
 	err := cache.ZAdd(ctx, username, redis.Z{

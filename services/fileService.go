@@ -1,28 +1,39 @@
 package services
 
 import (
-	"context"
 	"fmt"
+	"io/ioutil"
 	"log"
+	"mime/multipart"
 	"os"
 
 	"github.com/goyourt/yogourt/interfaces"
-	"gorm.io/gorm"
 )
 
-func SaveFile(f interfaces.FileInterface) error {
-	GenerateFile(f.GetUuid(), f.GetContent())
+const FileFolder = "./public/files/"
 
-	db := GetDB()
-	ctx := context.Background()
-
-	err := gorm.G[interfaces.FileInterface](db, gorm.WithResult()).Create(ctx, &f)
-
-	return err
+func SaveFile(f interfaces.FileInterface) {
+	path := FileFolder + f.GetUuid()
+	f.SetPath(path)
+	GenerateFile(path, f.GetContent())
 }
 
-func GenerateFile(fileName string, fileContent string) {
-	file, fileError := os.Create(fileName)
+func ReadFile(f interfaces.FileInterface) (string, error) {
+	if f.GetContent() != "" {
+		return f.GetContent(), nil
+	}
+
+	content, err := os.ReadFile(f.GetPath())
+	if err != nil {
+		return "", err
+	}
+
+	f.SetContent(string(content))
+	return f.GetContent(), nil
+}
+
+func GenerateFile(filePath string, fileContent string) {
+	file, fileError := os.Create(filePath)
 	if fileError != nil {
 		fmt.Printf("error while creating file: %v \n", fileError)
 		log.Printf("ERROR: %s\n", fileError)
@@ -40,4 +51,13 @@ func CreateFolder(folderPath string) {
 		log.Printf("ERROR: %s\n", folderError)
 		return
 	}
+}
+
+func SerializeFile(file multipart.File) (string, error) {
+	defer file.Close()
+	bytes, err := ioutil.ReadAll(file)
+	if err != nil {
+		return "", err
+	}
+	return string(bytes), nil
 }

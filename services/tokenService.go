@@ -7,15 +7,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/goyourt/yogourt/services/providers"
 )
 
-func CreateToken(username string) (string, error) {
-	config := GetConfig()
+func CreateToken(uuid string) (string, error) {
+	config := providers.GetConfig()
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256,
 		jwt.MapClaims{
-			"username": username,
-			"exp":      time.Now().Add(time.Minute * time.Duration(config.Security.TokenExpires)).Unix(),
+			"uuid": uuid,
+			"exp":  time.Now().Add(time.Minute * time.Duration(config.Security.TokenExpires)).Unix(),
 		})
 
 	tokenString, err := token.SignedString([]byte(config.Security.SecretKey))
@@ -26,21 +27,21 @@ func CreateToken(username string) (string, error) {
 	return tokenString, nil
 }
 
-func ValidToken(tokenString string) error {
-	config := GetConfig()
+func ValidToken(tokenString string) (*jwt.Token, error) {
+	config := providers.GetConfig()
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		return []byte(config.Security.SecretKey), nil
 	})
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if !token.Valid {
-		return fmt.Errorf("invalid token")
+		return nil, fmt.Errorf("invalid token")
 	}
 
-	return nil
+	return token, nil
 }
 
 func GetRequestToken(c *gin.Context) (string, error) {
@@ -56,4 +57,15 @@ func GetRequestToken(c *gin.Context) (string, error) {
 	}
 
 	return strings.TrimPrefix(authHeader, prefix), nil
+}
+
+func GetClaim(token *jwt.Token, claimKey string) (any, error) {
+	if claims, ok := token.Claims.(jwt.MapClaims); ok {
+		if claimValue, exists := claims[claimKey]; exists {
+
+			return claimValue, nil
+		}
+		return nil, fmt.Errorf("Value not found in token : %s", claimKey)
+	}
+	return nil, fmt.Errorf("invalid token claims")
 }

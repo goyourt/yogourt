@@ -69,3 +69,10 @@ func loadAPIHandlers(r *gin.Engine, basePath string) error {
 		return nil
 	})
 }
+
+func HandleRequest(c *gin.Context, req any) {
+	if err := c.ShouldBindJSON(req); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		c.Abort()
+	}
+}
