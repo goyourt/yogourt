@@ -14,10 +14,10 @@ type FileInterface interface {
 
 type File struct {
 	Base
-	Name      string `gorm:"not null" json:"Name"`
+	Name      string `gorm:"not null" json:"name"`
 	Path      string `gorm:"not null" json:"-"`
-	Extension string `json:"Extension"`
-	Content   string `gorm:"-" json:"Content"`
+	Extension string `json:"-"`
+	Content   string `gorm:"-" json:"-"`
 }
 
 func (f *File) GetName() string { return f.Name }

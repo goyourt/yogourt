@@ -54,25 +54,18 @@ func loadAPIHandlers(r *gin.Engine, basePath string) error {
 				return fmt.Errorf("error loading or compiling package from %s: %v", path, err)
 			}
 
-			routeHandler, err := compiler.LoadFunctions(newPath, []string{"GET", "PUT", "POST", "PATCH", "DELETE"})
+			routeHandlers, err := compiler.LoadFunctions(newPath, []string{"GET", "PUT", "POST", "PATCH", "DELETE"})
 			if err != nil {
 				return err
 			}
 
 			routePath := "/api" + path[len(basePath):len(path)-len(info.Name())]
 			routeMiddlewares := middleware.GetMiddleware(routePath)
-			for protocol, handlerFunc := range routeHandler {
-				routeMiddlewares = append(routeMiddlewares, handlerFunc.(func(*gin.Context)))
-				r.Handle(protocol, routePath, routeMiddlewares...)
+			for protocol, handlerFunc := range routeHandlers {
+				handlerPile := append(routeMiddlewares, handlerFunc.(func(*gin.Context)))
+				r.Handle(protocol, routePath, handlerPile...)
 			}
 		}
 		return nil
 	})
-}
-
-func HandleRequest(c *gin.Context, req any) {
-	if err := c.ShouldBindJSON(req); err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
-		c.Abort()
-	}
 }

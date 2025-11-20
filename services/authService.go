@@ -1,44 +1,43 @@
 package services
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/goyourt/yogourt/interfaces"
+	"github.com/goyourt/yogourt/routing"
 	"github.com/goyourt/yogourt/services/database"
+	"github.com/goyourt/yogourt/services/providers"
 )
 
-func Authenticate(c *gin.Context) {
+func Authenticate(c *gin.Context, currentUser interfaces.BaseInterface) {
 	token, err := GetRequestToken(c)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err})
-		c.Abort()
+		routing.RespondAndAbort(c, http.StatusUnauthorized, err.Error())
 		return
 	}
 
 	parsedToken, err := ValidToken(token)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
-		c.Abort()
+		routing.RespondAndAbort(c, http.StatusUnauthorized, "Invalid token")
 		return
 	}
 
 	userUuid, err := GetClaim(parsedToken, "uuid")
-	fmt.Println(userUuid, err)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err})
-		c.Abort()
+		routing.RespondAndAbort(c, http.StatusUnauthorized, err.Error())
 		return
 	}
 
-	var currentUser interfaces.BaseInterface
 	database.GetOneBy(currentUser, map[string]any{"uuid": userUuid})
 	if currentUser.GetID() == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
-		c.Abort()
+		routing.RespondAndAbort(c, http.StatusUnauthorized, "User not found")
 		return
 	}
 
-	c.Set("currentUser", currentUser)
+	setCurrentUser(c, currentUser)
+}
+
+func setCurrentUser(c *gin.Context, currentUser interfaces.BaseInterface) {
+	c.Set(providers.ContextCurrentUser, currentUser)
 }

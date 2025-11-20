@@ -19,7 +19,7 @@ func TestTokenProvider(t *testing.T) {
 	if token == "" {
 		t.Error("Token is empty")
 	}
-	if err = services.ValidToken(token); err != nil {
+	if _, err = services.ValidToken(token); err != nil {
 		t.Errorf("Token is not valid: %v", err)
 	}
 
