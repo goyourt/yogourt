@@ -14,24 +14,64 @@ type FileInterface interface {
 
 type File struct {
 	Base
-	Name      string `gorm:"not null" json:"name"`
-	Path      string `gorm:"not null" json:"-"`
-	Extension string `json:"-"`
-	Content   string `gorm:"-" json:"-"`
+	Name      *string `json:"name"`
+	Path      *string `json:"-"`
+	Extension *string `json:"-"`
+	Content   *string `gorm:"-" json:"-"`
 }
 
-func (f *File) GetName() string { return f.Name }
+func (f *File) GetName() string {
+	if nil == f.Name {
+		return ""
+	}
+	return *f.Name
+}
 
-func (f *File) SetName(name string) { f.Name = name }
+func (f *File) SetName(name string) {
+	if nil == f.Name {
+		f.Name = new(string)
+	}
+	*f.Name = name
+}
 
-func (f *File) GetPath() string { return f.Path }
+func (f *File) GetPath() string {
+	if nil == f.Path {
+		return ""
+	}
+	return *f.Path
+}
 
-func (f *File) SetPath(path string) { f.Path = path }
+func (f *File) SetPath(path string) {
+	if nil == f.Path {
+		f.Path = new(string)
+	}
+	*f.Path = path
+}
 
-func (f *File) GetExtension() string { return f.Extension }
+func (f *File) GetExtension() string {
+	if nil == f.Extension {
+		return ""
+	}
+	return *f.Extension
+}
 
-func (f *File) SetExtension(extension string) { f.Extension = extension }
+func (f *File) SetExtension(extension string) {
+	if nil == f.Extension {
+		f.Extension = new(string)
+	}
+	*f.Extension = extension
+}
 
-func (f *File) GetContent() string { return f.Content }
+func (f *File) GetContent() string {
+	if nil == f.Content {
+		return ""
+	}
+	return *f.Content
+}
 
-func (f *File) SetContent(content string) { f.Content = content }
+func (f *File) SetContent(content string) {
+	if nil == f.Content {
+		f.Content = new(string)
+	}
+	*f.Content = content
+}

@@ -1,10 +1,13 @@
 package database
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/goyourt/yogourt/interfaces"
 	"github.com/goyourt/yogourt/services/providers"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type DataWriter struct {
@@ -26,7 +29,7 @@ func GetAll(objs []*interfaces.BaseInterface, query *gorm.DB) {
 }
 
 func GetOneBy(obj interfaces.BaseInterface, values map[string]any) {
-	JoinTables(values).First(obj)
+	JoinTables(values).Preload(clause.Associations).First(obj)
 }
 
 func (dw DataWriter) Create(obj interfaces.BaseInterface) error {
@@ -37,7 +40,13 @@ func (dw DataWriter) Create(obj interfaces.BaseInterface) error {
 
 func (dw DataWriter) Update(obj interfaces.BaseInterface) error {
 	obj.SetUpdatedById(dw.CurrentUser)
-	return providers.GetDB().Save(obj).Error
+	obj.SetUpdatedAt(time.Now())
+
+	if err := providers.GetDB().Model(obj).Where("uuid = ?", obj.GetUuid()).UpdateColumns(obj).Error; err != nil {
+		return err
+	}
+
+	return providers.GetDB().First(obj, "uuid = ?", obj.GetUuid()).Error
 }
 
 func (dw DataWriter) Delete(obj interfaces.BaseInterface) error {

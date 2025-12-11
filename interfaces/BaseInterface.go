@@ -8,7 +8,9 @@ import (
 
 type BaseInterface interface {
 	GetID() int
+	SetID(id int)
 	GetUuid() string
+	SetUuid(uuid string)
 	GetCreatedAt() time.Time
 	SetCreatedAt(time.Time)
 	GetCreatedById() int
@@ -24,55 +26,103 @@ type BaseInterface interface {
 }
 
 type Base struct {
-	ID          int            `gorm:"primaryKey;autoIncrement;not null;unique" json:"-"`
-	Uuid        string         `gorm:"type:uuid;default:gen_random_uuid();not null;unique" json:"uuid"`
+	ID          *int           `gorm:"primaryKey;autoIncrement;not null;unique" json:"-"`
+	Uuid        *string        `gorm:"type:uuid;default:gen_random_uuid();not null;unique" json:"uuid"`
 	CreatedAt   time.Time      `json:"-" gorm:"autoCreateTime" `
-	CreatedById int            `json:"-"`
+	CreatedById *int           `json:"-"`
 	UpdatedAt   time.Time      `json:"-" gorm:"autoUpdateTime" `
-	UpdatedById int            `json:"-"`
+	UpdatedById *int           `json:"-"`
 	DeletedAt   gorm.DeletedAt `json:"-"`
-	DeletedById int            `json:"-"`
+	DeletedById *int           `json:"-"`
 }
 
-func (b *Base) GetID() int { return b.ID }
+func (b *Base) GetID() int {
+	if nil == b.ID {
+		return 0
+	}
+	return *b.ID
+}
 
-func (b *Base) GetUuid() string { return b.Uuid }
+func (b *Base) SetID(id int) {
+	if nil == b.ID {
+		b.ID = new(int)
+	}
+	*b.ID = id
+}
+
+func (b *Base) GetUuid() string {
+	if nil == b.Uuid {
+		return ""
+	}
+	return *b.Uuid
+}
+
+func (b *Base) SetUuid(uuid string) {
+	if nil == b.Uuid {
+		b.Uuid = new(string)
+	}
+	*b.Uuid = uuid
+}
 
 func (b *Base) GetCreatedAt() time.Time { return b.CreatedAt }
 
 func (b *Base) SetCreatedAt(createdAt time.Time) { b.CreatedAt = createdAt }
 
-func (b *Base) GetCreatedById() int { return b.CreatedById }
+func (b *Base) GetCreatedById() int {
+	if nil == b.CreatedById {
+		return 0
+	}
+	return *b.CreatedById
+}
 
 func (b *Base) SetCreatedById(currentUser BaseInterface) {
 	if currentUser == nil {
 		return
 	}
-	b.CreatedById = currentUser.GetID()
+	if nil == b.CreatedById {
+		b.CreatedById = new(int)
+	}
+	*b.CreatedById = currentUser.GetID()
 }
 
 func (b *Base) GetUpdatedAt() time.Time { return b.UpdatedAt }
 
 func (b *Base) SetUpdatedAt(updatedAt time.Time) { b.UpdatedAt = updatedAt }
 
-func (b *Base) GetUpdatedById() int { return b.UpdatedById }
+func (b *Base) GetUpdatedById() int {
+	if nil == b.UpdatedById {
+		return 0
+	}
+	return *b.UpdatedById
+}
 
 func (b *Base) SetUpdatedById(currentUser BaseInterface) {
 	if currentUser == nil {
 		return
 	}
-	b.UpdatedById = currentUser.GetID()
+	if nil == b.UpdatedById {
+		b.UpdatedById = new(int)
+	}
+	*b.UpdatedById = currentUser.GetID()
 }
 
 func (b *Base) GetDeletedAt() gorm.DeletedAt { return b.DeletedAt }
 
 func (b *Base) SetDeletedAt(deletedAt gorm.DeletedAt) { b.DeletedAt = deletedAt }
 
-func (b *Base) GetDeletedById() int { return b.DeletedById }
+func (b *Base) GetDeletedById() int {
+	if nil == b.DeletedById {
+		return 0
+	}
+	return *b.DeletedById
+}
 
 func (b *Base) SetDeletedById(currentUser BaseInterface) {
 	if currentUser == nil {
 		return
 	}
-	b.CreatedById = currentUser.GetID()
+	if nil == b.DeletedById {
+		b.DeletedById = new(int)
+	}
+	*b.DeletedById = currentUser.GetID()
 }

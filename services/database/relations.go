@@ -1,9 +1,11 @@
 package database
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/goyourt/yogourt/interfaces"
 	"github.com/goyourt/yogourt/services/providers"
 	"golang.org/x/text/cases"
@@ -31,6 +33,55 @@ func HydrateRelation(obj interfaces.BaseInterface, table string, relation interf
 	}
 
 	providers.GetDB().Preload(table).Find(obj, obj.GetID())
+}
+
+func UpsertRelations(c *gin.Context, obj interfaces.BaseInterface, relations []string) error {
+	objRef := reflect.ValueOf(obj)
+	dw := CreateDataWriter(c)
+
+	for _, relation := range relations {
+		relationGetter := objRef.MethodByName("Get" + relation)
+		if !relationGetter.IsValid() {
+			return fmt.Errorf("Missing getter for relation %s", relation)
+		}
+
+		relationInterface, ok := relationGetter.Call(nil)[0].Interface().(interfaces.BaseInterface)
+		if !ok {
+			return fmt.Errorf("Getter for relation %s doesn't return BaseInterface", relation)
+		}
+		if relationInterface == nil {
+			return nil
+		}
+
+		relationUuid := relationInterface.GetUuid()
+		if relationUuid == "" {
+			if err := dw.Create(relationInterface); err != nil {
+				return fmt.Errorf("Unable to create relation %s: %w", relation, err)
+			}
+		} else {
+			if err := dw.Update(relationInterface); err != nil {
+				return fmt.Errorf("Unable to update relation %s: %w", relation, err)
+			}
+
+			if relationInterface.GetID() == 0 {
+				return fmt.Errorf("Unable to update relation %s: related object not found (uuid: %w)", relation, relationUuid)
+			}
+		}
+
+		relationSetter := objRef.MethodByName("Set" + relation)
+		if !relationSetter.IsValid() {
+			return fmt.Errorf("Missing setter for relation %s", relation)
+		}
+
+		errors := relationSetter.Call([]reflect.Value{reflect.ValueOf(relationInterface)})
+		if len(errors) > 0 {
+			if err, ok := errors[0].Interface().(error); ok && err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 func formatAlias(str string) string {
