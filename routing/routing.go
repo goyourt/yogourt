@@ -5,10 +5,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/goyourt/yogourt/compiler"
 	"github.com/goyourt/yogourt/middleware"
 )
 
@@ -40,32 +38,4 @@ func Initialize(apiFolder string, port string) {
 	}
 
 	r.Run(port)
-}
-
-func loadAPIHandlers(r *gin.Engine, basePath string) error {
-	return filepath.Walk(basePath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if strings.HasSuffix(info.Name(), ".go") {
-			newPath, err := compiler.CompilePlugin(path)
-			if err != nil {
-				return fmt.Errorf("error loading or compiling package from %s: %v", path, err)
-			}
-
-			routeHandler, err := compiler.LoadFunctions(newPath, []string{"GET", "PUT", "POST", "PATCH", "DELETE"})
-			if err != nil {
-				return err
-			}
-
-			routePath := "/api" + path[len(basePath):len(path)-len(info.Name())]
-			routeMiddlewares := middleware.GetMiddleware(routePath)
-			for protocol, handlerFunc := range routeHandler {
-				routeMiddlewares = append(routeMiddlewares, handlerFunc.(func(*gin.Context)))
-				r.Handle(protocol, routePath, routeMiddlewares...)
-			}
-		}
-		return nil
-	})
 }
