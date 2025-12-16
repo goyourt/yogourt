@@ -35,20 +35,19 @@ func GetMiddleware(path string) []gin.HandlerFunc {
 }
 
 func LoadMiddlewares(basePath string) error {
-	filePath := basePath + middlewaresPath
-	newPath, err := compiler.CompilePlugin(filePath)
+	src := basePath + middlewaresPath
+
+	so, err := compiler.CompileCached(src)
 	if err != nil {
-		return fmt.Errorf("Error compiling middleware plugin: %v", err)
+		return fmt.Errorf("compile middleware plugin failed: %w", err)
 	}
 
-	callbacks, err := compiler.LoadFunctions(newPath, []string{"Callbacks"})
-
+	cb, err := compiler.LoadSymbol[map[string]func(*gin.Context)](so, "Callbacks")
 	if err != nil {
-		return err
+		return fmt.Errorf("load middleware callbacks failed: %w", err)
 	}
 
-	middlewares = *callbacks["Callbacks"].(*map[string]func(*gin.Context))
-
+	middlewares = *cb
 	return nil
 }
 
