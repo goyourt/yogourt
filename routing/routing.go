@@ -5,9 +5,12 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/goyourt/yogourt/middleware"
+	"github.com/goyourt/yogourt/services"
 )
 
 const compiledRootFolder = ".yogourt"
@@ -36,6 +39,16 @@ func Initialize(apiFolder string, port string) {
 		log.Fatal("Error loading handlers: ", err)
 		return
 	}
+
+	corsConfig := services.GetConfig().CORS
+
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     corsConfig.AllowedOrigins,
+		AllowMethods:     corsConfig.AllowedMethods,
+		AllowHeaders:     corsConfig.AllowedHeaders,
+		AllowCredentials: corsConfig.AllowCredentials,
+		MaxAge:           corsConfig.MaxAge * time.Hour,
+	}))
 
 	r.Run(port)
 }
