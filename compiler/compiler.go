@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -74,21 +75,28 @@ func upToDate(src string, out string, srcMod time.Time) bool {
 	return true
 }
 
+var errRebuild = errors.New("rebuild")
+
 func anyGoFileNewer(dir string, soTime time.Time) bool {
-	filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
 			return nil
 		}
 		if strings.HasSuffix(path, ".go") {
 			if info, err := d.Info(); err == nil {
 				if info.ModTime().After(soTime) {
-					panic("rebuild")
+					return errRebuild
 				}
 			}
 		}
 		return nil
 	})
-	return false
+
+	return errors.Is(err, errRebuild)
+
 }
 
 func isDir(path string) bool {
