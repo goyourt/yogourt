@@ -56,6 +56,7 @@ type Config struct {
 		AllowedMethods   []string      `yaml:"allowed_methods"`
 		AllowedHeaders   []string      `yaml:"allowed_headers"`
 		AllowCredentials bool          `yaml:"allow_credentials"`
+		AllowAllOrigins  bool          `yaml:"allow_all_origins"`
 		MaxAge           time.Duration `yaml:"max_age"`
 	} `yaml:"cors"`
 }
