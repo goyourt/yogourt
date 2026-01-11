@@ -10,7 +10,7 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/goyourt/yogourt/middleware"
-	"github.com/goyourt/yogourt/services"
+	"github.com/goyourt/yogourt/services/providers"
 )
 
 const compiledRootFolder = ".yogourt"
@@ -40,7 +40,7 @@ func Initialize(apiFolder string, port string) {
 		return
 	}
 
-	corsConfig := services.GetConfig().CORS
+	corsConfig := providers.GetConfig().CORS
 
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     corsConfig.AllowedOrigins,
