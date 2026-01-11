@@ -30,6 +30,18 @@ func Initialize(apiFolder string, port string) {
 
 	r := gin.Default()
 
+	corsConfig := providers.GetConfig().CORS
+	if len(corsConfig.AllowedOrigins) == 0 && !corsConfig.AllowAllOrigins {
+		corsConfig.AllowAllOrigins = true
+	}
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     corsConfig.AllowedOrigins,
+		AllowMethods:     corsConfig.AllowedMethods,
+		AllowHeaders:     corsConfig.AllowedHeaders,
+		AllowCredentials: corsConfig.AllowCredentials,
+		MaxAge:           corsConfig.MaxAge * time.Hour,
+	}))
+
 	err = middleware.LoadMiddlewares(basePath)
 	if err != nil {
 		log.Fatal("Error loading middlewares: ", err)
@@ -39,16 +51,6 @@ func Initialize(apiFolder string, port string) {
 		log.Fatal("Error loading handlers: ", err)
 		return
 	}
-
-	corsConfig := providers.GetConfig().CORS
-
-	r.Use(cors.New(cors.Config{
-		AllowOrigins:     corsConfig.AllowedOrigins,
-		AllowMethods:     corsConfig.AllowedMethods,
-		AllowHeaders:     corsConfig.AllowedHeaders,
-		AllowCredentials: corsConfig.AllowCredentials,
-		MaxAge:           corsConfig.MaxAge * time.Hour,
-	}))
 
 	r.Run(port)
 }
