@@ -21,6 +21,9 @@ func routePathFor(basePath, fullPath, fileName string) string {
 	if strings.HasSuffix(rel, "/") {
 		rel = rel[:len(rel)-1]
 	}
+
+	rel = strings.ReplaceAll(rel, "/_", "/:")
+
 	return "/api" + rel
 }
 
