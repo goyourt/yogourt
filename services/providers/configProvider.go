@@ -3,6 +3,7 @@ package providers
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -49,6 +50,15 @@ type Config struct {
 		SecretKey    string `yaml:"secret_key"`
 		TokenExpires int    `yaml:"token_expires"`
 	} `yaml:"security"`
+
+	CORS struct {
+		AllowedOrigins   []string      `yaml:"allowed_origins"`
+		AllowedMethods   []string      `yaml:"allowed_methods"`
+		AllowedHeaders   []string      `yaml:"allowed_headers"`
+		AllowCredentials bool          `yaml:"allow_credentials"`
+		AllowAllOrigins  bool          `yaml:"allow_all_origins"`
+		MaxAge           time.Duration `yaml:"max_age"`
+	} `yaml:"cors"`
 }
 
 // read and parse the config.yaml file
