@@ -62,6 +62,8 @@ type Config struct {
 }
 
 // read and parse the config.yaml file
+//TODO take default values into account if there is one ${envVar:-defaultValue} actually only ${envVar} is supported
+
 func loadConfig() error {
 
 	file, err := os.ReadFile(ConfigPath)
@@ -69,8 +71,10 @@ func loadConfig() error {
 		return fmt.Errorf("❌ Impossible de lire config.yaml : %v", err)
 	}
 
-	var cfg Config
-	err = yaml.Unmarshal(file, &cfg)
+	replaced := os.ExpandEnv(string(file))
+
+	cfg := Config{}
+	err = yaml.Unmarshal([]byte(replaced), &cfg)
 	if err != nil {
 		return fmt.Errorf("❌ Erreur de parsing YAML : %v", err)
 	}
