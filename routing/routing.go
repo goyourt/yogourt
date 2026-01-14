@@ -45,6 +45,10 @@ func Initialize(apiFolder string) {
 		MaxAge:           corsConfig.MaxAge * time.Hour,
 	}))
 
+	r.OPTIONS("/*path", func(c *gin.Context) {
+		c.AbortWithStatus(204)
+	})
+
 	err = middleware.LoadMiddlewares(basePath)
 	if err != nil {
 		log.Fatal("Error loading middlewares: ", err)
