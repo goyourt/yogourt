@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -15,7 +16,7 @@ import (
 
 const compiledRootFolder = ".yogourt"
 
-func Initialize(apiFolder string, port string) {
+func Initialize(apiFolder string) {
 	basePath, err := os.Getwd()
 	if err != nil {
 		fmt.Println(err)
@@ -31,9 +32,11 @@ func Initialize(apiFolder string, port string) {
 	r := gin.Default()
 
 	corsConfig := providers.GetConfig().CORS
+
 	if len(corsConfig.AllowedOrigins) == 0 && !corsConfig.AllowAllOrigins {
 		corsConfig.AllowAllOrigins = true
 	}
+
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     corsConfig.AllowedOrigins,
 		AllowMethods:     corsConfig.AllowedMethods,
@@ -41,6 +44,10 @@ func Initialize(apiFolder string, port string) {
 		AllowCredentials: corsConfig.AllowCredentials,
 		MaxAge:           corsConfig.MaxAge * time.Hour,
 	}))
+
+	r.OPTIONS("/*path", func(c *gin.Context) {
+		c.AbortWithStatus(204)
+	})
 
 	err = middleware.LoadMiddlewares(basePath)
 	if err != nil {
@@ -52,5 +59,5 @@ func Initialize(apiFolder string, port string) {
 		return
 	}
 
-	r.Run(port)
+	r.Run("0.0.0.0:" + strconv.Itoa(providers.GetConfig().Server.Port))
 }
