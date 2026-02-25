@@ -22,7 +22,18 @@ func routePathFor(basePath, fullPath, fileName string) string {
 		rel = rel[:len(rel)-1]
 	}
 
-	rel = strings.ReplaceAll(rel, "/_", "/:")
+	parts := strings.Split(rel, "/")
+	for i, part := range parts {
+		if len(part) >= 3 && strings.HasPrefix(part, "[") && strings.HasSuffix(part, "]") {
+			parts[i] = ":" + part[1:len(part)-1]
+			continue
+		}
+		// Backward compatibility with legacy _param folder format.
+		if strings.HasPrefix(part, "_") && len(part) > 1 {
+			parts[i] = ":" + part[1:]
+		}
+	}
+	rel = strings.Join(parts, "/")
 
 	return "/api" + rel
 }

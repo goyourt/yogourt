@@ -28,9 +28,9 @@ type BaseInterface interface {
 type Base struct {
 	ID          *int           `gorm:"primaryKey;autoIncrement;not null;unique" json:"-"`
 	Uuid        *string        `gorm:"type:uuid;default:gen_random_uuid();not null;unique" json:"uuid"`
-	CreatedAt   time.Time      `json:"-" gorm:"autoCreateTime" `
+	CreatedAt   time.Time      `json:"createdAt" gorm:"autoCreateTime" `
 	CreatedById *int           `json:"-"`
-	UpdatedAt   time.Time      `json:"-" gorm:"autoUpdateTime" `
+	UpdatedAt   time.Time      `json:"updatedAt" gorm:"autoUpdateTime" `
 	UpdatedById *int           `json:"-"`
 	DeletedAt   gorm.DeletedAt `json:"-"`
 	DeletedById *int           `json:"-"`
@@ -38,7 +38,7 @@ type Base struct {
 
 func (b *Base) GetID() int {
 	if nil == b.ID {
-		return 0
+		b.ID = new(int)
 	}
 	return *b.ID
 }
@@ -52,7 +52,7 @@ func (b *Base) SetID(id int) {
 
 func (b *Base) GetUuid() string {
 	if nil == b.Uuid {
-		return ""
+		b.Uuid = new(string)
 	}
 	return *b.Uuid
 }
@@ -70,7 +70,7 @@ func (b *Base) SetCreatedAt(createdAt time.Time) { b.CreatedAt = createdAt }
 
 func (b *Base) GetCreatedById() int {
 	if nil == b.CreatedById {
-		return 0
+		b.CreatedById = new(int)
 	}
 	return *b.CreatedById
 }
@@ -91,7 +91,7 @@ func (b *Base) SetUpdatedAt(updatedAt time.Time) { b.UpdatedAt = updatedAt }
 
 func (b *Base) GetUpdatedById() int {
 	if nil == b.UpdatedById {
-		return 0
+		b.UpdatedById = new(int)
 	}
 	return *b.UpdatedById
 }
@@ -112,7 +112,7 @@ func (b *Base) SetDeletedAt(deletedAt gorm.DeletedAt) { b.DeletedAt = deletedAt 
 
 func (b *Base) GetDeletedById() int {
 	if nil == b.DeletedById {
-		return 0
+		b.DeletedById = new(int)
 	}
 	return *b.DeletedById
 }

@@ -35,6 +35,13 @@ func HydrateRelation(obj interfaces.BaseInterface, table string, relation interf
 	providers.GetDB().Preload(table).Find(obj, obj.GetID())
 }
 
+func HydrateManyToManyRelation[T interfaces.BaseInterface](obj interfaces.BaseInterface, table string, relation *[]T) {
+	if !reflect.ValueOf(relation).IsNil() {
+		return
+	}
+	providers.GetDB().Preload(table).Find(obj, obj.GetID())
+}
+
 func UpsertRelations(c *gin.Context, obj interfaces.BaseInterface, relations []string) error {
 	objRef := reflect.ValueOf(obj)
 	dw := CreateDataWriter(c)
