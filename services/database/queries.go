@@ -6,7 +6,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/goyourt/yogourt/interfaces"
 	"github.com/goyourt/yogourt/services/providers"
-	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -24,8 +23,8 @@ func CreateDataWriter(c *gin.Context) DataWriter {
 	return DataWriter{currentUser}
 }
 
-func GetAll(objs []*interfaces.BaseInterface, query *gorm.DB) {
-	query.Find(&objs)
+func GetAll[T interfaces.BaseInterface](objs *[]T, values map[string]any) {
+	JoinTables(values).Preload(clause.Associations).Find(objs)
 }
 
 func GetOneBy(obj interfaces.BaseInterface, values map[string]any) {
