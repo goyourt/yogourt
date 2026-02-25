@@ -17,11 +17,18 @@ func loadAPIHandlers(r *gin.Engine, basePath string) error {
 		return err
 	}
 
+	type routeTask struct {
+		protocol  string
+		routePath string
+		handlers  []gin.HandlerFunc
+	}
+
 	var (
 		compileWg sync.WaitGroup
 		loadWg    sync.WaitGroup
 		mu        sync.Mutex
 		errFirst  error
+		tasks     []routeTask
 	)
 
 	// ensure at least 1 worker
@@ -32,21 +39,6 @@ func loadAPIHandlers(r *gin.Engine, basePath string) error {
 
 	// semaphore to limit concurrent compilations
 	sem := make(chan struct{}, maxWorkers)
-
-	// buffer tasks to avoid backpressure during compilation
-	tasks := make(chan struct {
-		protocol  string
-		routePath string
-		handlers  []gin.HandlerFunc
-	}, len(files))
-
-	regDone := make(chan struct{})
-	go func() {
-		for t := range tasks {
-			r.Handle(t.protocol, t.routePath, t.handlers...)
-		}
-		close(regDone)
-	}()
 
 	for _, f := range files {
 		compileWg.Add(1)
@@ -105,11 +97,13 @@ func loadAPIHandlers(r *gin.Engine, basePath string) error {
 					mws := make([]gin.HandlerFunc, len(baseMw), len(baseMw)+1)
 					copy(mws, baseMw)
 					mws = append(mws, h)
-					tasks <- struct {
-						protocol  string
-						routePath string
-						handlers  []gin.HandlerFunc
-					}{protocol: m, routePath: rp, handlers: mws}
+					mu.Lock()
+					tasks = append(tasks, routeTask{
+						protocol:  m,
+						routePath: rp,
+						handlers:  mws,
+					})
+					mu.Unlock()
 				}
 			}(f)
 		}()
@@ -117,8 +111,14 @@ func loadAPIHandlers(r *gin.Engine, basePath string) error {
 
 	compileWg.Wait()
 	loadWg.Wait()
-	close(tasks)
-	<-regDone
+
+	if errFirst != nil {
+		return errFirst
+	}
+
+	for _, t := range tasks {
+		r.Handle(t.protocol, t.routePath, t.handlers...)
+	}
 
 	return errFirst
 }
