@@ -39,7 +39,6 @@ func CompilePlugin(filePath string) (string, error) {
 	}
 
 	fmt.Println("🔨 Compiling plugin:", outPath)
-
 	cmd := exec.Command(
 		"go", "build",
 		"-buildmode=plugin",

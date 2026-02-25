@@ -17,8 +17,6 @@ import (
 	"github.com/goyourt/yogourt/services/providers"
 )
 
-const compiledRootFolder = ".yogourt"
-
 func Initialize(apiFolder string) {
 	basePath, err := os.Getwd()
 	if err != nil {
@@ -52,19 +50,14 @@ func Initialize(apiFolder string) {
 		c.AbortWithStatus(204)
 	})
 
-	err = middleware.LoadMiddlewares(basePath)
-	if err != nil {
-		if tryRestartOnStalePlugin(err, basePath) {
-			return
-		}
-		log.Fatal("Error loading middlewares: ", err)
+	if !runOrRestart(basePath, "Error loading middlewares", func() error {
+		return middleware.LoadMiddlewares(basePath)
+	}) {
 		return
 	}
-	if err = loadAPIHandlers(r, apiFolder); err != nil {
-		if tryRestartOnStalePlugin(err, basePath) {
-			return
-		}
-		log.Fatal("Error loading handlers: ", err)
+	if !runOrRestart(basePath, "Error loading handlers", func() error {
+		return loadAPIHandlers(r, apiFolder)
+	}) {
 		return
 	}
 
@@ -74,6 +67,18 @@ func Initialize(apiFolder string) {
 const stalePluginRestartCountEnv = "YOGOURT_STALE_PLUGIN_RESTART_COUNT"
 const stalePluginRestartMax = 10
 const stalePluginRestartDelay = 500 * time.Millisecond
+
+func runOrRestart(basePath, logPrefix string, fn func() error) bool {
+	err := fn()
+	if err == nil {
+		return true
+	}
+	if tryRestartOnStalePlugin(err, basePath) {
+		return false
+	}
+	log.Fatal(logPrefix+": ", err)
+	return false
+}
 
 func tryRestartOnStalePlugin(err error, basePath string) bool {
 	if !compiler.IsStalePluginVersionError(err) {

@@ -16,7 +16,6 @@ func IsStalePluginVersionError(err error) bool {
 		"built with a previous version of package",
 		"built with a previous version of the package",
 		"build with a previous version of the package",
-		"plugin already loaded",
 	}
 
 	for e := err; e != nil; e = errors.Unwrap(e) {
