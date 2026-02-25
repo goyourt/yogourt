@@ -71,7 +71,7 @@ func UpsertRelations(c *gin.Context, obj interfaces.BaseInterface, relations []s
 			}
 
 			if relationInterface.GetID() == 0 {
-				return fmt.Errorf("Unable to update relation %s: related object not found (uuid: %w)", relation, relationUuid)
+				return fmt.Errorf("Unable to update relation %s: related object not found (uuid: %s)", relation, relationUuid)
 			}
 		}
 
