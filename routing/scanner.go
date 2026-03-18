@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/goyourt/yogourt/compiler"
 )
 
 func isGoFile(name string) bool {
@@ -22,7 +24,11 @@ func routePathFor(basePath, fullPath, fileName string) string {
 		rel = rel[:len(rel)-1]
 	}
 
-	rel = strings.ReplaceAll(rel, "/_", "/:")
+	parts := strings.Split(rel, "/")
+	for i, part := range parts {
+		parts[i] = compiler.SlugRouteFormater(part)
+	}
+	rel = strings.Join(parts, "/")
 
 	return "/api" + rel
 }

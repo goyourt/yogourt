@@ -47,8 +47,14 @@ type Config struct {
 	} `yaml:"paths"`
 
 	Security struct {
-		SecretKey    string `yaml:"secret_key"`
-		TokenExpires int    `yaml:"token_expires"`
+		SecretKey                   string `yaml:"secret_key"`
+		HashCost                    int    `yaml:"hash_cost"`
+		TokenExpires                int    `yaml:"token_expires"`
+		PasswordMinimumLength       int    `yaml:"password_minimum_length"`
+		PasswordSpacialCharRequired bool   `yaml:"password_special_char_required"`
+		PasswordNumberRequired      bool   `yaml:"password_number_required"`
+		PasswordUpperCaseRequired   bool   `yaml:"password_upper_case_required"`
+		PasswordLowerCaseRequired   bool   `yaml:"password_lower_case_required"`
 	} `yaml:"security"`
 
 	CORS struct {
@@ -68,7 +74,7 @@ func loadConfig() error {
 
 	file, err := os.ReadFile(ConfigPath)
 	if err != nil {
-		return fmt.Errorf("❌ Impossible de lire config.yaml : %v", err)
+		return fmt.Errorf("❌ Impossible to read config.yaml : %v", err)
 	}
 
 	replaced := os.ExpandEnv(string(file))
@@ -76,7 +82,7 @@ func loadConfig() error {
 	cfg := Config{}
 	err = yaml.Unmarshal([]byte(replaced), &cfg)
 	if err != nil {
-		return fmt.Errorf("❌ Erreur de parsing YAML : %v", err)
+		return fmt.Errorf("❌ Error parsing YAML : %v", err)
 	}
 
 	configData = &cfg

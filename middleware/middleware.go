@@ -19,8 +19,12 @@ func GetMiddleware(path string) []gin.HandlerFunc {
 	for i := -1; i <= len(subroutes); i++ {
 		route := "/"
 		if i >= 0 {
+			if i < len(subroutes) {
+				subroutes[i] = compiler.SlugRouteFormater(subroutes[i])
+			}
 			route = strings.Join(subroutes[:i], "/")
 		}
+
 		value, keyExists := middlewares[route]
 		if route != "" && value != nil {
 			middlewareList = append(middlewareList, value)
