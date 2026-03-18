@@ -41,6 +41,9 @@ func HandleRequest(c *gin.Context, req any) bool {
 		if f.Kind() == reflect.Slice {
 			for j := 0; j < f.Len(); j++ {
 				elem := f.Index(j)
+				if elem.Kind() != reflect.Interface {
+					continue
+				}
 				if !elem.CanInterface() || elem.IsNil() {
 					continue
 				}

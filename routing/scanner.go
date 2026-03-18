@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/goyourt/yogourt/compiler"
 )
 
 func isGoFile(name string) bool {
@@ -24,14 +26,7 @@ func routePathFor(basePath, fullPath, fileName string) string {
 
 	parts := strings.Split(rel, "/")
 	for i, part := range parts {
-		if len(part) >= 3 && strings.HasPrefix(part, "[") && strings.HasSuffix(part, "]") {
-			parts[i] = ":" + part[1:len(part)-1]
-			continue
-		}
-		// Backward compatibility with legacy _param folder format.
-		if strings.HasPrefix(part, "_") && len(part) > 1 {
-			parts[i] = ":" + part[1:]
-		}
+		parts[i] = compiler.SlugRouteFormater(part)
 	}
 	rel = strings.Join(parts, "/")
 
