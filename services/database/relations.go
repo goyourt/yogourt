@@ -11,20 +11,27 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-func JoinTables(values map[string]any) *gorm.DB {
-	query := providers.GetDB()
+const likePatern = "LIKE"
+
+func JoinTables[T interfaces.BaseInterface](values map[string]any, objType *T) *gorm.DB {
+	query := providers.GetDB().Model(*objType)
 	for key, value := range values {
 		if strings.Contains(key, ".") {
 			model := toTitle(strings.Split(key, ".")[0])
-			query = query.Joins(model)
+			if tableName, isManyToMany := getMany2ManyTableName(*objType, model); isManyToMany {
+				query = joinManyToMany(query, model, tableName)
+			} else {
+				query = query.Preload(model).InnerJoins(model)
+			}
 		}
 
-		query = query.Where(formatAlias(key)+"=?", value)
+		query = searchPatern(query, key, value)
 	}
 
-	return query
+	return query.Preload(clause.Associations)
 }
 
 func HydrateRelation(obj interfaces.BaseInterface, table string, relation interfaces.BaseInterface, relationId int) {
@@ -35,7 +42,15 @@ func HydrateRelation(obj interfaces.BaseInterface, table string, relation interf
 	providers.GetDB().Preload(table).Find(obj, obj.GetID())
 }
 
+func HydrateManyToManyRelation[T interfaces.BaseInterface](obj interfaces.BaseInterface, table string, relation *[]T) {
+	if !reflect.ValueOf(relation).IsNil() {
+		return
+	}
+	providers.GetDB().Preload(table).Find(obj, obj.GetID())
+}
+
 func UpsertRelations(c *gin.Context, obj interfaces.BaseInterface, relations []string) error {
+	// TODO : upsert with many to many relations
 	objRef := reflect.ValueOf(obj)
 	dw := CreateDataWriter(c)
 
@@ -45,12 +60,18 @@ func UpsertRelations(c *gin.Context, obj interfaces.BaseInterface, relations []s
 			return fmt.Errorf("Missing getter for relation %s", relation)
 		}
 
-		relationInterface, ok := relationGetter.Call(nil)[0].Interface().(interfaces.BaseInterface)
+		results := relationGetter.Call(nil)
+		if len(results) == 0 {
+			return fmt.Errorf("Getter for relation %s returned no value", relation)
+		}
+		val := results[0]
+		if !val.IsValid() || val.IsNil() {
+			continue
+		}
+
+		relationInterface, ok := val.Interface().(interfaces.BaseInterface)
 		if !ok {
 			return fmt.Errorf("Getter for relation %s doesn't return BaseInterface", relation)
-		}
-		if relationInterface == nil {
-			return nil
 		}
 
 		relationUuid := relationInterface.GetUuid()
@@ -64,7 +85,7 @@ func UpsertRelations(c *gin.Context, obj interfaces.BaseInterface, relations []s
 			}
 
 			if relationInterface.GetID() == 0 {
-				return fmt.Errorf("Unable to update relation %s: related object not found (uuid: %w)", relation, relationUuid)
+				return fmt.Errorf("Unable to update relation %s: related object not found (uuid: %s)", relation, relationUuid)
 			}
 		}
 
@@ -84,6 +105,25 @@ func UpsertRelations(c *gin.Context, obj interfaces.BaseInterface, relations []s
 	return nil
 }
 
+func searchPatern(query *gorm.DB, key string, value any) *gorm.DB {
+	if str, isStr := value.(string); isStr {
+		if str, likeFound := strings.CutPrefix(str, likePatern); likeFound {
+			str, prefixFound := strings.CutPrefix(str, "%")
+			str, suffixFound := strings.CutSuffix(str, "%")
+			if prefixFound && suffixFound {
+				return query.Where(formatAlias(key)+" LIKE ?", "%"+str+"%")
+			}
+		}
+	}
+
+	valueType := reflect.TypeOf(value)
+	if valueType != nil && (valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Array) {
+		return query.Where(formatAlias(key)+" IN ?", value)
+	}
+
+	return query.Where(formatAlias(key)+"=?", value)
+}
+
 func formatAlias(str string) string {
 	if !strings.Contains(str, ".") {
 		return "\"" + str + "\""
@@ -94,4 +134,59 @@ func formatAlias(str string) string {
 
 func toTitle(str string) string {
 	return cases.Title(language.Und).String(str)
+}
+
+func resetId(obj interfaces.BaseInterface) {
+	value := reflect.ValueOf(obj)
+	field := value.Elem().FieldByName("ID")
+	field.Set(reflect.Zero(field.Type()))
+}
+
+func getMany2ManyTableName(obj interfaces.BaseInterface, fieldName string) (string, bool) {
+	t := reflect.TypeOf(obj)
+	if t == nil {
+		return "", false
+	}
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return "", false
+	}
+
+	f, ok := t.FieldByName(fieldName)
+	if !ok {
+		return "", false
+	}
+
+	g := f.Tag.Get("gorm")
+	if g == "" {
+		return "", false
+	}
+
+	for _, part := range strings.Split(g, ";") {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(part, "many2many:") {
+			val := strings.TrimPrefix(part, "many2many:")
+			val = strings.Trim(val, `"`)
+			return val, true
+		}
+	}
+	return "", false
+}
+
+func joinManyToMany(query *gorm.DB, model string, tableName string) *gorm.DB {
+	tables := strings.Split(tableName, "_")
+	from, to := tables[0], tables[1]
+
+	return query.
+		Joins(fmt.Sprintf("LEFT JOIN %s ON %s.id = %s.%s_id", tableName, asTableName(from), tableName, from)).
+		Joins(fmt.Sprintf("LEFT JOIN %s \"%s\" ON \"%s\".id = %s.%s_id", asTableName(to), model, model, tableName, to))
+}
+
+func asTableName(table string) string {
+	if strings.HasSuffix(table, "s") {
+		return table
+	}
+	return table + "s"
 }

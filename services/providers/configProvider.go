@@ -3,6 +3,7 @@ package providers
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -18,8 +19,9 @@ type Config struct {
 	Mode    string `yaml:"mode"`
 
 	Server struct {
-		Port int  `yaml:"port"`
-		CORS bool `yaml:"cors"`
+		Port int    `yaml:"port"`
+		CORS bool   `yaml:"cors"`
+		Host string `yaml:"host"`
 	} `yaml:"server"`
 
 	Database struct {
@@ -46,23 +48,42 @@ type Config struct {
 	} `yaml:"paths"`
 
 	Security struct {
-		SecretKey    string `yaml:"secret_key"`
-		TokenExpires int    `yaml:"token_expires"`
+		SecretKey                   string `yaml:"secret_key"`
+		HashCost                    int    `yaml:"hash_cost"`
+		TokenExpires                int    `yaml:"token_expires"`
+		PasswordMinimumLength       int    `yaml:"password_minimum_length"`
+		PasswordSpacialCharRequired bool   `yaml:"password_special_char_required"`
+		PasswordNumberRequired      bool   `yaml:"password_number_required"`
+		PasswordUpperCaseRequired   bool   `yaml:"password_upper_case_required"`
+		PasswordLowerCaseRequired   bool   `yaml:"password_lower_case_required"`
 	} `yaml:"security"`
+
+	CORS struct {
+		AllowedOrigins   []string      `yaml:"allowed_origins"`
+		AllowedMethods   []string      `yaml:"allowed_methods"`
+		AllowedHeaders   []string      `yaml:"allowed_headers"`
+		AllowCredentials bool          `yaml:"allow_credentials"`
+		AllowAllOrigins  bool          `yaml:"allow_all_origins"`
+		MaxAge           time.Duration `yaml:"max_age"`
+	} `yaml:"cors"`
 }
 
 // read and parse the config.yaml file
+//TODO take default values into account if there is one ${envVar:-defaultValue} actually only ${envVar} is supported
+
 func loadConfig() error {
 
 	file, err := os.ReadFile(ConfigPath)
 	if err != nil {
-		return fmt.Errorf("❌ Impossible de lire config.yaml : %v", err)
+		return fmt.Errorf("❌ Impossible to read config.yaml : %v", err)
 	}
 
-	var cfg Config
-	err = yaml.Unmarshal(file, &cfg)
+	replaced := os.ExpandEnv(string(file))
+
+	cfg := Config{}
+	err = yaml.Unmarshal([]byte(replaced), &cfg)
 	if err != nil {
-		return fmt.Errorf("❌ Erreur de parsing YAML : %v", err)
+		return fmt.Errorf("❌ Error parsing YAML : %v", err)
 	}
 
 	configData = &cfg

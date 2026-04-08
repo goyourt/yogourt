@@ -28,9 +28,9 @@ type BaseInterface interface {
 type Base struct {
 	ID          *int           `gorm:"primaryKey;autoIncrement;not null;unique" json:"-"`
 	Uuid        *string        `gorm:"type:uuid;default:gen_random_uuid();not null;unique" json:"uuid"`
-	CreatedAt   time.Time      `json:"-" gorm:"autoCreateTime" `
+	CreatedAt   time.Time      `json:"createdAt" gorm:"autoCreateTime" `
 	CreatedById *int           `json:"-"`
-	UpdatedAt   time.Time      `json:"-" gorm:"autoUpdateTime" `
+	UpdatedAt   time.Time      `json:"updatedAt" gorm:"autoUpdateTime" `
 	UpdatedById *int           `json:"-"`
 	DeletedAt   gorm.DeletedAt `json:"-"`
 	DeletedById *int           `json:"-"`

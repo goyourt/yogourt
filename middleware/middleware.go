@@ -19,8 +19,12 @@ func GetMiddleware(path string) []gin.HandlerFunc {
 	for i := -1; i <= len(subroutes); i++ {
 		route := "/"
 		if i >= 0 {
+			if i < len(subroutes) {
+				subroutes[i] = compiler.SlugRouteFormater(subroutes[i])
+			}
 			route = strings.Join(subroutes[:i], "/")
 		}
+
 		value, keyExists := middlewares[route]
 		if route != "" && value != nil {
 			middlewareList = append(middlewareList, value)
@@ -35,20 +39,19 @@ func GetMiddleware(path string) []gin.HandlerFunc {
 }
 
 func LoadMiddlewares(basePath string) error {
-	filePath := basePath + middlewaresPath
-	newPath, err := compiler.CompilePlugin(filePath)
+	src := basePath + middlewaresPath
+
+	so, err := compiler.CompileCached(src)
 	if err != nil {
-		return fmt.Errorf("Error compiling middleware plugin: %v", err)
+		return fmt.Errorf("compile middleware plugin failed: %w", err)
 	}
 
-	callbacks, err := compiler.LoadFunctions(newPath, []string{"Callbacks"})
-
+	cb, err := compiler.LoadSymbol[map[string]func(*gin.Context)](so, "Callbacks")
 	if err != nil {
-		return err
+		return fmt.Errorf("load middleware callbacks failed: %w", err)
 	}
 
-	middlewares = *callbacks["Callbacks"].(*map[string]func(*gin.Context))
-
+	middlewares = *cb
 	return nil
 }
 

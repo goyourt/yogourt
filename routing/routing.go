@@ -5,16 +5,24 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/goyourt/yogourt/compiler"
 	"github.com/goyourt/yogourt/middleware"
+	"github.com/goyourt/yogourt/services/providers"
 )
 
-const compiledRootFolder = ".yogourt"
+const stalePluginRestartCountEnv = "YOGOURT_STALE_PLUGIN_RESTART_COUNT"
+const stalePluginRestartMax = 10
+const stalePluginRestartDelay = 500 * time.Millisecond
+const defaultHost = "0.0.0.0"
 
-func Initialize(apiFolder string, port string) {
+func Initialize(apiFolder string) {
 	basePath, err := os.Getwd()
 	if err != nil {
 		fmt.Println(err)
@@ -29,43 +37,144 @@ func Initialize(apiFolder string, port string) {
 
 	r := gin.Default()
 
-	err = middleware.LoadMiddlewares(basePath)
-	if err != nil {
-		log.Fatal("Error loading middlewares: ", err)
+	corsConfig := providers.GetConfig().CORS
+
+	if len(corsConfig.AllowedOrigins) == 0 && !corsConfig.AllowAllOrigins {
+		corsConfig.AllowAllOrigins = true
+	}
+
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     corsConfig.AllowedOrigins,
+		AllowMethods:     corsConfig.AllowedMethods,
+		AllowHeaders:     corsConfig.AllowedHeaders,
+		AllowCredentials: corsConfig.AllowCredentials,
+		MaxAge:           corsConfig.MaxAge * time.Hour,
+	}))
+
+	r.OPTIONS("/*path", func(c *gin.Context) {
+		c.AbortWithStatus(204)
+	})
+
+	if !runOrRestart(basePath, "Error loading middlewares", func() error {
+		return middleware.LoadMiddlewares(basePath)
+	}) {
 		return
 	}
-	if err = loadAPIHandlers(r, apiFolder); err != nil {
-		log.Fatal("Error loading handlers: ", err)
+	if !runOrRestart(basePath, "Error loading handlers", func() error {
+		return loadAPIHandlers(r, apiFolder)
+	}) {
 		return
 	}
 
-	r.Run(port)
+	serverConfig := providers.GetConfig().Server
+	host := serverConfig.Host
+	if host == "" {
+		host = defaultHost
+	}
+
+	r.Run(host + ":" + strconv.Itoa(serverConfig.Port))
 }
 
-func loadAPIHandlers(r *gin.Engine, basePath string) error {
-	return filepath.Walk(basePath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
+func runOrRestart(basePath, logPrefix string, fn func() error) bool {
+	err := fn()
+	if err == nil {
+		return true
+	}
+	if tryRestartOnStalePlugin(err, basePath) {
+		return false
+	}
+	log.Fatal(logPrefix+": ", err)
+	return false
+}
+
+func tryRestartOnStalePlugin(err error, basePath string) bool {
+	if !compiler.IsStalePluginVersionError(err) {
+		return false
+	}
+
+	restartCount, _ := strconv.Atoi(os.Getenv(stalePluginRestartCountEnv))
+	if restartCount >= stalePluginRestartMax {
+		log.Printf(
+			"Stale plugin detected but restart limit reached (%d/%d): %v",
+			restartCount,
+			stalePluginRestartMax,
+			err,
+		)
+		return false
+	}
+
+	if soPath := compiler.ExtractPluginPath(err); soPath != "" {
+		targets := make([]string, 0, 4)
+		targets = append(targets, soPath)
+		if filepath.Ext(soPath) != ".so" {
+			targets = append(targets, soPath+".so")
+		}
+		if !filepath.IsAbs(soPath) {
+			abs := filepath.Join(basePath, soPath)
+			targets = append(targets, abs)
+			if filepath.Ext(abs) != ".so" {
+				targets = append(targets, abs+".so")
+			}
 		}
 
-		if strings.HasSuffix(info.Name(), ".go") {
-			newPath, err := compiler.CompilePlugin(path)
-			if err != nil {
-				return fmt.Errorf("error loading or compiling package from %s: %v", path, err)
-			}
-
-			routeHandlers, err := compiler.LoadFunctions(newPath, []string{"GET", "PUT", "POST", "PATCH", "DELETE"})
-			if err != nil {
-				return err
-			}
-
-			routePath := "/api" + path[len(basePath):len(path)-len(info.Name())]
-			routeMiddlewares := middleware.GetMiddleware(routePath)
-			for protocol, handlerFunc := range routeHandlers {
-				handlerPile := append(routeMiddlewares, handlerFunc.(func(*gin.Context)))
-				r.Handle(protocol, routePath, handlerPile...)
+		removed := false
+		for _, target := range targets {
+			if rmErr := os.Remove(target); rmErr == nil {
+				log.Printf("Removed stale plugin before restart: %s", target)
+				removed = true
+				break
+			} else if !os.IsNotExist(rmErr) {
+				log.Printf("Failed to remove stale plugin %s before restart: %v", target, rmErr)
 			}
 		}
-		return nil
-	})
+		if !removed {
+			log.Printf("No stale plugin file removed before restart (extracted path: %s)", soPath)
+		}
+	}
+
+	execPath, pathErr := os.Executable()
+	if pathErr != nil {
+		log.Printf("Unable to resolve executable path for restart: %v", pathErr)
+		return false
+	}
+
+	argv := append([]string{execPath}, os.Args[1:]...)
+	env := setEnvVar(os.Environ(), stalePluginRestartCountEnv, strconv.Itoa(restartCount+1))
+
+	log.Printf(
+		"Stale plugin detected, restarting process in-place (%d/%d) after %s",
+		restartCount+1,
+		stalePluginRestartMax,
+		stalePluginRestartDelay,
+	)
+	time.Sleep(stalePluginRestartDelay)
+
+	if execErr := syscall.Exec(execPath, argv, env); execErr != nil {
+		log.Printf("Unable to exec process restart after stale plugin error: %v", execErr)
+		return false
+	}
+	return true
+}
+
+func setEnvVar(env []string, key, value string) []string {
+	prefix := key + "="
+	updated := make([]string, 0, len(env)+1)
+	replaced := false
+
+	for _, kv := range env {
+		if strings.HasPrefix(kv, prefix) {
+			if !replaced {
+				updated = append(updated, prefix+value)
+				replaced = true
+			}
+			continue
+		}
+		updated = append(updated, kv)
+	}
+
+	if !replaced {
+		updated = append(updated, prefix+value)
+	}
+
+	return updated
 }
