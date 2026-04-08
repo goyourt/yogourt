@@ -20,6 +20,7 @@ import (
 const stalePluginRestartCountEnv = "YOGOURT_STALE_PLUGIN_RESTART_COUNT"
 const stalePluginRestartMax = 10
 const stalePluginRestartDelay = 500 * time.Millisecond
+const defaultHost = "0.0.0.0"
 
 func Initialize(apiFolder string) {
 	basePath, err := os.Getwd()
@@ -65,7 +66,13 @@ func Initialize(apiFolder string) {
 		return
 	}
 
-	r.Run("0.0.0.0:" + strconv.Itoa(providers.GetConfig().Server.Port))
+	serverConfig := providers.GetConfig().Server
+	host := serverConfig.Host
+	if host == "" {
+		host = defaultHost
+	}
+
+	r.Run(host + ":" + strconv.Itoa(serverConfig.Port))
 }
 
 func runOrRestart(basePath, logPrefix string, fn func() error) bool {
