@@ -19,8 +19,9 @@ type Config struct {
 	Mode    string `yaml:"mode"`
 
 	Server struct {
-		Port int  `yaml:"port"`
-		CORS bool `yaml:"cors"`
+		Port int    `yaml:"port"`
+		CORS bool   `yaml:"cors"`
+		Host string `yaml:"host"`
 	} `yaml:"server"`
 
 	Database struct {
