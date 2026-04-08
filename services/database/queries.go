@@ -14,6 +14,10 @@ type DataWriter struct {
 }
 
 func CreateDataWriter(c *gin.Context) DataWriter {
+	if c == nil {
+		return DataWriter{nil}
+	}
+
 	currentUser := providers.GetCurrentUser(c)
 
 	if currentUser == nil {
@@ -32,6 +36,9 @@ func GetAllPaginated[T interfaces.BaseInterface](objs *[]T, values map[string]an
 }
 
 func GetOneBy(obj interfaces.BaseInterface, values map[string]any) {
+	if obj.GetID() == 0 {
+		resetId(obj)
+	}
 	JoinTables(values, &obj).First(obj)
 }
 

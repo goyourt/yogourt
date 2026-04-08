@@ -50,6 +50,7 @@ func HydrateManyToManyRelation[T interfaces.BaseInterface](obj interfaces.BaseIn
 }
 
 func UpsertRelations(c *gin.Context, obj interfaces.BaseInterface, relations []string) error {
+	// TODO : upsert with many to many relations
 	objRef := reflect.ValueOf(obj)
 	dw := CreateDataWriter(c)
 
@@ -59,12 +60,18 @@ func UpsertRelations(c *gin.Context, obj interfaces.BaseInterface, relations []s
 			return fmt.Errorf("Missing getter for relation %s", relation)
 		}
 
-		relationInterface, ok := relationGetter.Call(nil)[0].Interface().(interfaces.BaseInterface)
+		results := relationGetter.Call(nil)
+		if len(results) == 0 {
+			return fmt.Errorf("Getter for relation %s returned no value", relation)
+		}
+		val := results[0]
+		if !val.IsValid() || val.IsNil() {
+			continue
+		}
+
+		relationInterface, ok := val.Interface().(interfaces.BaseInterface)
 		if !ok {
 			return fmt.Errorf("Getter for relation %s doesn't return BaseInterface", relation)
-		}
-		if relationInterface == nil {
-			return nil
 		}
 
 		relationUuid := relationInterface.GetUuid()

@@ -38,7 +38,7 @@ type Base struct {
 
 func (b *Base) GetID() int {
 	if nil == b.ID {
-		b.ID = new(int)
+		return 0
 	}
 	return *b.ID
 }
@@ -52,7 +52,7 @@ func (b *Base) SetID(id int) {
 
 func (b *Base) GetUuid() string {
 	if nil == b.Uuid {
-		b.Uuid = new(string)
+		return ""
 	}
 	return *b.Uuid
 }
@@ -70,7 +70,7 @@ func (b *Base) SetCreatedAt(createdAt time.Time) { b.CreatedAt = createdAt }
 
 func (b *Base) GetCreatedById() int {
 	if nil == b.CreatedById {
-		b.CreatedById = new(int)
+		return 0
 	}
 	return *b.CreatedById
 }
@@ -91,7 +91,7 @@ func (b *Base) SetUpdatedAt(updatedAt time.Time) { b.UpdatedAt = updatedAt }
 
 func (b *Base) GetUpdatedById() int {
 	if nil == b.UpdatedById {
-		b.UpdatedById = new(int)
+		return 0
 	}
 	return *b.UpdatedById
 }
@@ -112,7 +112,7 @@ func (b *Base) SetDeletedAt(deletedAt gorm.DeletedAt) { b.DeletedAt = deletedAt 
 
 func (b *Base) GetDeletedById() int {
 	if nil == b.DeletedById {
-		b.DeletedById = new(int)
+		return 0
 	}
 	return *b.DeletedById
 }
