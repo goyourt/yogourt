@@ -1,0 +1,10 @@
+file_folder: "./public/files/"
+max_file_size: 5242880
+files:
+  images:
+    max_file_size: 10485760
+  scripts:
+    file_folder: "/var/tmp/"
+    max_file_size: 2621440
+  tests:
+    file_folder: "/test"

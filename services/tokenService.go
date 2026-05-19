@@ -11,7 +11,7 @@ import (
 )
 
 func CreateToken(uuid string) (string, error) {
-	config := providers.GetConfig()
+	config := providers.GetMainConfig()
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256,
 		jwt.MapClaims{
@@ -28,7 +28,7 @@ func CreateToken(uuid string) (string, error) {
 }
 
 func ValidToken(tokenString string) (*jwt.Token, error) {
-	config := providers.GetConfig()
+	config := providers.GetMainConfig()
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		return []byte(config.Security.SecretKey), nil
 	})

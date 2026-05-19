@@ -8,12 +8,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const ConfigPath = "./config.yaml"
+const mainConfigPath = "./configs/yogourt.yaml"
 
-var configData *Config
+var configData *MainConfig
 
-// Config Structure of config file
-type Config struct {
+// MainConfig Structure of yogourt config file
+type MainConfig struct {
 	AppName string `yaml:"app_name"`
 	Version string `yaml:"version"`
 	Mode    string `yaml:"mode"`
@@ -71,28 +71,27 @@ type Config struct {
 // read and parse the config.yaml file
 //TODO take default values into account if there is one ${envVar:-defaultValue} actually only ${envVar} is supported
 
-func loadConfig() error {
+func loadConfig(filePath string, cfg any) error {
 
-	file, err := os.ReadFile(ConfigPath)
+	file, err := os.ReadFile(filePath)
 	if err != nil {
-		return fmt.Errorf("❌ Impossible to read config.yaml : %v", err)
+		return fmt.Errorf("Impossible to read config file %s : %v", filePath, err)
 	}
 
 	replaced := os.ExpandEnv(string(file))
 
-	cfg := Config{}
-	err = yaml.Unmarshal([]byte(replaced), &cfg)
+	err = yaml.Unmarshal([]byte(replaced), cfg)
 	if err != nil {
-		return fmt.Errorf("❌ Error parsing YAML : %v", err)
+		return fmt.Errorf("Error parsing YAML : %v", err)
 	}
 
-	configData = &cfg
 	return nil
 }
 
-func GetConfig() *Config {
+func GetMainConfig() *MainConfig {
 	if configData == nil {
-		err := loadConfig()
+		configData = &MainConfig{}
+		err := loadConfig(mainConfigPath, configData)
 		if err != nil {
 			panic(err)
 		}
