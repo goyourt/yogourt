@@ -10,8 +10,6 @@ import (
 	"github.com/goyourt/yogourt/dairy"
 	"github.com/goyourt/yogourt/interfaces"
 	"github.com/goyourt/yogourt/services/providers"
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -22,14 +20,15 @@ const orderByPatern = "orderBy"
 
 func JoinTables[T interfaces.BaseInterface](values map[string]any, objType *T) *gorm.DB {
 	query := providers.GetDB().Model(*objType)
-	var joinedTables []string
+	query.Statement.Parse(query.Statement.Model)
+	joinedTables := []string{dairy.ToTitle(query.Statement.Table)}
 	for key, value := range values {
 		if key == orderByPatern {
 			query = addOrderBy(query, value)
 			continue
 		}
 		if strings.Contains(key, ".") {
-			model := toTitle(strings.Split(key, ".")[0])
+			model := dairy.ToTitle(strings.Split(key, ".")[0])
 			if !slices.Contains(joinedTables, model) {
 				if tableName, isManyToMany := getMany2ManyTableName(*objType, model); isManyToMany {
 					query = joinManyToMany(query, model, tableName)
@@ -119,6 +118,7 @@ func UpsertRelations(c *gin.Context, obj interfaces.BaseInterface, relations []s
 
 func addConditionPatern(query *gorm.DB, key string, value any) *gorm.DB {
 	isOr := false
+	mainTable := query.Statement.Table
 	if str, isStr := value.(string); isStr {
 		if str, orFound := strings.CutPrefix(str, orPatern); orFound {
 			str, prefixFound := strings.CutPrefix(str, "%")
@@ -138,27 +138,27 @@ func addConditionPatern(query *gorm.DB, key string, value any) *gorm.DB {
 	}
 
 	if isOr {
-		return query.Or(searchPatern(key, value))
+		return query.Or(searchPatern(key, value, mainTable))
 	}
-	return query.Where(searchPatern(key, value))
+	return query.Where(searchPatern(key, value, mainTable))
 }
 
-func searchPatern(key string, value any) (string, any) {
+func searchPatern(key string, value any, mainTable string) (string, any) {
 	if str, isStr := value.(string); isStr {
 		if str, likeFound := strings.CutPrefix(str, likePatern); likeFound {
 			str, prefixFound := strings.CutPrefix(str, "%")
 			str, suffixFound := strings.CutSuffix(str, "%")
 			if prefixFound && suffixFound {
-				return formatAlias(key) + " LIKE ?", "%" + str + "%"
+				return formatAlias(key, mainTable) + " LIKE ?", "%" + str + "%"
 			}
 		}
 	}
 
 	if dairy.IsArray(value) {
-		return formatAlias(key) + " IN ?", value
+		return formatAlias(key, mainTable) + " IN ?", value
 	}
 
-	return formatAlias(key) + "=?", value
+	return formatAlias(key, mainTable) + "=?", value
 }
 
 func addOrderBy(query *gorm.DB, values any) *gorm.DB {
@@ -177,16 +177,16 @@ func addOrderBy(query *gorm.DB, values any) *gorm.DB {
 	return query
 }
 
-func formatAlias(str string) string {
+func formatAlias(str string, maintable string) string {
 	if !strings.Contains(str, ".") {
 		return "\"" + str + "\""
 	}
 	substr := strings.Split(str, ".")
-	return "\"" + toTitle(substr[0]) + "\"." + substr[1]
-}
-
-func toTitle(str string) string {
-	return cases.Title(language.Und).String(str)
+	alias := substr[0]
+	if alias != maintable {
+		alias = dairy.ToTitle(alias)
+	}
+	return "\"" + alias + "\"." + substr[1]
 }
 
 func resetId(obj interfaces.BaseInterface) {

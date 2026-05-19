@@ -50,7 +50,7 @@ func GenerateFile(filePath string, fileContent string) {
 }
 
 func CreateFolder(folderPath string) {
-	folderError := os.Mkdir(folderPath, os.ModePerm)
+	folderError := os.MkdirAll(folderPath, os.ModePerm)
 	if folderError != nil {
 		fmt.Printf("error while creating folder: %v \n", folderError)
 		log.Printf("ERROR: %s\n", folderError)
