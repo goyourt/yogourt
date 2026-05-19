@@ -28,7 +28,7 @@ func GetCache() *redis.Client {
 }
 
 func InitDB() *gorm.DB {
-	cfg := GetConfig()
+	cfg := GetMainConfig()
 
 	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=disable", cfg.Database.Host, cfg.Database.User, cfg.Database.Password, cfg.Database.DB, cfg.Database.Port)
 
@@ -42,7 +42,7 @@ func InitDB() *gorm.DB {
 }
 
 func InitCache() *redis.Client {
-	cfg := GetConfig().Cache
+	cfg := GetMainConfig().Cache
 
 	return redis.NewClient(&redis.Options{
 		Addr:     cfg.Host + ":" + cfg.Port,

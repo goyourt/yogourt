@@ -1,13 +1,14 @@
 package test
 
 import (
+	"fmt"
 	"testing"
 
-	"github.com/goyourt/yogourt/services"
+	"github.com/goyourt/yogourt/services/providers"
 )
 
 func TestConfigReader(t *testing.T) {
-	cfg := services.GetConfig()
+	cfg := providers.GetMainConfig()
 	if cfg == nil {
 		t.Errorf("Config file not found")
 		return
@@ -30,5 +31,39 @@ func TestConfigReader(t *testing.T) {
 	}
 	if cfg.Cache.DB != 1000 {
 		t.Errorf("Cache config not found")
+	}
+}
+
+func TestFileConfigReader(t *testing.T) {
+	cfg := providers.GetFileConfig()
+	fmt.Println(cfg)
+	if cfg == nil || cfg.FileFolder == nil {
+		t.Errorf("Config file not found")
+		return
+	}
+
+	if *cfg.FileFolder != "./public/files/" {
+		t.Errorf("FileFolder not found")
+	}
+	if *cfg.MaxFileSize != 5242880 {
+		t.Errorf("MaxFileSize not found")
+	}
+
+	scripts := providers.GetConfigByFileType("scripts")
+	images := providers.GetConfigByFileType("images")
+	tests := providers.GetConfigByFileType("tests")
+	null := providers.GetConfigByFileType("null")
+
+	if *scripts.MaxFileSize != 2621440 || *scripts.FileFolder != "/var/tmp/" {
+		t.Errorf("Incorect config for scripts")
+	}
+	if *images.MaxFileSize != 10485760 || *images.FileFolder != *cfg.FileFolder {
+		t.Errorf("Incorect config for images")
+	}
+	if *tests.MaxFileSize != *cfg.MaxFileSize || *tests.FileFolder != "/test" {
+		t.Errorf("Incorect config for tests")
+	}
+	if *null.MaxFileSize != *cfg.MaxFileSize || *null.FileFolder != *cfg.FileFolder {
+		t.Errorf("Incorect config for null")
 	}
 }

@@ -60,6 +60,15 @@ func (dw DataWriter) Update(obj interfaces.BaseInterface) error {
 	return providers.GetDB().First(obj, "uuid = ?", obj.GetUuid()).Error
 }
 
+func (dw DataWriter) Upsert(obj interfaces.BaseInterface, values map[string]any) error {
+	GetOneBy(obj, values)
+
+	if obj.GetID() == 0 {
+		return dw.Create(obj)
+	}
+	return dw.Update(obj)
+}
+
 func (dw DataWriter) Delete(obj interfaces.BaseInterface) error {
 	obj.SetDeletedById(dw.CurrentUser)
 	return providers.GetDB().Delete(obj).Error
@@ -79,8 +88,4 @@ func Paginate(query *gorm.DB, page int, pageSize int) *gorm.DB {
 	}
 	offset := (page - 1) * pageSize
 	return query.Limit(pageSize).Offset(offset)
-}
-
-func Like(s string) string {
-	return likePatern + "%" + s + "%"
 }

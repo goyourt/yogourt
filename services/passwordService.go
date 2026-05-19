@@ -14,7 +14,7 @@ import (
 const defaultCost = 12
 
 func GetHashedPassword(pwd string) (string, error) {
-	cfg := providers.GetConfig().Security
+	cfg := providers.GetMainConfig().Security
 	cost := cfg.HashCost
 
 	if cost == 0 {
@@ -55,7 +55,7 @@ func SavePasswordFailure(username string) error {
 }
 
 func IsPasswordValid(pwd string) bool {
-	cfg := providers.GetConfig().Security
+	cfg := providers.GetMainConfig().Security
 
 	if len(pwd) < cfg.PasswordMinimumLength {
 		return false

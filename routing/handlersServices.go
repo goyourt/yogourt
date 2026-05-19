@@ -64,8 +64,12 @@ func RespondAndAbort(c *gin.Context, status int, error string) {
 	c.Abort()
 }
 
-func RespondSuccess(c *gin.Context, status int, data interfaces.BaseInterface) {
-	RespondWithContent(c, status, "data", data)
+func RespondSuccess(c *gin.Context, data any) {
+	RespondWithContent(c, http.StatusOK, "data", data)
+}
+
+func RespondCreated(c *gin.Context, data any) {
+	RespondWithContent(c, http.StatusCreated, "data", data)
 }
 
 func RespondNoContent(c *gin.Context) {

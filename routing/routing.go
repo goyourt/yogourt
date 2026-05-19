@@ -37,7 +37,7 @@ func Initialize(apiFolder string) {
 
 	r := gin.Default()
 
-	corsConfig := providers.GetConfig().CORS
+	corsConfig := providers.GetMainConfig().CORS
 
 	if len(corsConfig.AllowedOrigins) == 0 && !corsConfig.AllowAllOrigins {
 		corsConfig.AllowAllOrigins = true
@@ -66,7 +66,7 @@ func Initialize(apiFolder string) {
 		return
 	}
 
-	serverConfig := providers.GetConfig().Server
+	serverConfig := providers.GetMainConfig().Server
 	host := serverConfig.Host
 	if host == "" {
 		host = defaultHost
