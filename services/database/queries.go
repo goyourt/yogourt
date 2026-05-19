@@ -32,7 +32,7 @@ func GetAll[T interfaces.BaseInterface](objs *[]T, values map[string]any) {
 }
 
 func GetAllPaginated[T interfaces.BaseInterface](objs *[]T, values map[string]any, page int, pageSize int) {
-	SearchQuery(values, objs, page, pageSize).Find(objs)
+	SearchQuery(values, objs, page, pageSize).Distinct().Find(objs)
 }
 
 func GetOneBy(obj interfaces.BaseInterface, values map[string]any) {
