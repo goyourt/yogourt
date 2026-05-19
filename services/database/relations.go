@@ -3,6 +3,7 @@ package database
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -21,6 +22,7 @@ const orderByPatern = "orderBy"
 
 func JoinTables[T interfaces.BaseInterface](values map[string]any, objType *T) *gorm.DB {
 	query := providers.GetDB().Model(*objType)
+	var joinedTables []string
 	for key, value := range values {
 		if key == orderByPatern {
 			query = addOrderBy(query, value)
@@ -28,10 +30,13 @@ func JoinTables[T interfaces.BaseInterface](values map[string]any, objType *T) *
 		}
 		if strings.Contains(key, ".") {
 			model := toTitle(strings.Split(key, ".")[0])
-			if tableName, isManyToMany := getMany2ManyTableName(*objType, model); isManyToMany {
-				query = joinManyToMany(query, model, tableName)
-			} else {
-				query = query.Preload(model).InnerJoins(model)
+			if !slices.Contains(joinedTables, model) {
+				if tableName, isManyToMany := getMany2ManyTableName(*objType, model); isManyToMany {
+					query = joinManyToMany(query, model, tableName)
+				} else {
+					query = query.Preload(model).InnerJoins(model)
+				}
+				joinedTables = append(joinedTables, model)
 			}
 		}
 
