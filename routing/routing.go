@@ -67,10 +67,11 @@ func Initialize(apiFolder string) {
 	}
 
 	serverConfig := providers.GetMainConfig().Server
-	host := serverConfig.Host
-	if host == "" {
-		host = defaultHost
-	}
+	//host := serverConfig.Host
+	//if host == "" {
+	//	host = defaultHost
+	//}
+	host := defaultHost
 
 	r.Run(host + ":" + strconv.Itoa(serverConfig.Port))
 }

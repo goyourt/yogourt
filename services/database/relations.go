@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/goyourt/yogourt/dairy"
 	"github.com/goyourt/yogourt/interfaces"
 	"github.com/goyourt/yogourt/services/providers"
 	"golang.org/x/text/cases"
@@ -15,10 +16,16 @@ import (
 )
 
 const likePatern = "LIKE"
+const orPatern = "OR"
+const orderByPatern = "orderBy"
 
 func JoinTables[T interfaces.BaseInterface](values map[string]any, objType *T) *gorm.DB {
 	query := providers.GetDB().Model(*objType)
 	for key, value := range values {
+		if key == orderByPatern {
+			query = addOrderBy(query, value)
+			continue
+		}
 		if strings.Contains(key, ".") {
 			model := toTitle(strings.Split(key, ".")[0])
 			if tableName, isManyToMany := getMany2ManyTableName(*objType, model); isManyToMany {
@@ -28,7 +35,7 @@ func JoinTables[T interfaces.BaseInterface](values map[string]any, objType *T) *
 			}
 		}
 
-		query = searchPatern(query, key, value)
+		query = addConditionPatern(query, key, value)
 	}
 
 	return query.Preload(clause.Associations)
@@ -105,23 +112,64 @@ func UpsertRelations(c *gin.Context, obj interfaces.BaseInterface, relations []s
 	return nil
 }
 
-func searchPatern(query *gorm.DB, key string, value any) *gorm.DB {
+func addConditionPatern(query *gorm.DB, key string, value any) *gorm.DB {
+	isOr := false
+	if str, isStr := value.(string); isStr {
+		if str, orFound := strings.CutPrefix(str, orPatern); orFound {
+			str, prefixFound := strings.CutPrefix(str, "%")
+			str, suffixFound := strings.CutSuffix(str, "%")
+			if prefixFound && suffixFound {
+				isOr = true
+				value = str
+			}
+		}
+	} else if dairy.IsArray(value) {
+		if len(value.([]string)) > 0 {
+			if value.([]string)[0] == orPatern {
+				isOr = true
+				value = value.([]string)[1:]
+			}
+		}
+	}
+
+	if isOr {
+		return query.Or(searchPatern(key, value))
+	}
+	return query.Where(searchPatern(key, value))
+}
+
+func searchPatern(key string, value any) (string, any) {
 	if str, isStr := value.(string); isStr {
 		if str, likeFound := strings.CutPrefix(str, likePatern); likeFound {
 			str, prefixFound := strings.CutPrefix(str, "%")
 			str, suffixFound := strings.CutSuffix(str, "%")
 			if prefixFound && suffixFound {
-				return query.Where(formatAlias(key)+" LIKE ?", "%"+str+"%")
+				return formatAlias(key) + " LIKE ?", "%" + str + "%"
 			}
 		}
 	}
 
-	valueType := reflect.TypeOf(value)
-	if valueType != nil && (valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Array) {
-		return query.Where(formatAlias(key)+" IN ?", value)
+	if dairy.IsArray(value) {
+		return formatAlias(key) + " IN ?", value
 	}
 
-	return query.Where(formatAlias(key)+"=?", value)
+	return formatAlias(key) + "=?", value
+}
+
+func addOrderBy(query *gorm.DB, values any) *gorm.DB {
+	vType := reflect.TypeOf(values)
+	if vType == nil {
+		return query
+	}
+
+	if dairy.IsArray(values) {
+		for _, order := range values.([]string) {
+			query.Order(order)
+		}
+	} else {
+		query.Order(values)
+	}
+	return query
 }
 
 func formatAlias(str string) string {
