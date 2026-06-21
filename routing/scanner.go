@@ -12,7 +12,7 @@ func isGoFile(name string) bool {
 	return strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go")
 }
 
-func routePathFor(basePath, fullPath, fileName string) string {
+func routePathFor(basePath, fullPath string) string {
 	rel, err := filepath.Rel(basePath, fullPath)
 	if err != nil {
 		rel = strings.TrimPrefix(fullPath, basePath)
