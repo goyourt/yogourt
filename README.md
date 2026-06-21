@@ -76,7 +76,38 @@ To be accepted by Yogourt, every go file inside of the `api` folder must be a mo
 
 To create a sub-route, you need to create a folder inside of the route folder.
 
-To implement route with parameters, you need to create a folder and put the parameter name between brackets like this `[id]`.
+To implement route with parameters, create a folder with a trailing underscore:
+
+```txt
+api/users/userId_/posts/postSlug_
+```
+
+This creates the following route:
+
+```txt
+/api/users/:userId/posts/:postSlug
+```
+
+You can then receive route params directly in a Yogourt handler:
+
+```go
+package main
+
+import "github.com/goyourt/yogourt"
+
+type Params struct {
+	UserID   string `param:"userId"`
+	PostSlug string `param:"postSlug"`
+}
+
+func GET(c *yogourt.Context, params Params) {
+	c.JSON(200, params)
+}
+
+func main() {}
+```
+
+The older `[id]` and `_id` syntaxes are still supported for compatibility, but `id_` is recommended because it keeps the route folder compatible with Go tooling.
 
 ### Middlewares
 
