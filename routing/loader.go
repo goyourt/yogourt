@@ -31,14 +31,8 @@ func loadAPIHandlers(r *gin.Engine, basePath string) error {
 		tasks     []routeTask
 	)
 
-	// ensure at least 1 worker
-	maxWorkers := runtime.NumCPU() / 2
-	if maxWorkers < 1 {
-		maxWorkers = 1
-	}
-
 	// semaphore to limit concurrent compilations
-	sem := make(chan struct{}, maxWorkers)
+	sem := make(chan struct{}, runtime.NumCPU())
 
 	for _, f := range files {
 		compileWg.Add(1)
@@ -50,11 +44,11 @@ func loadAPIHandlers(r *gin.Engine, basePath string) error {
 			defer compileWg.Done()
 			defer func() { <-sem }()
 
-			so, cerr := compiler.CompileCached(f)
+			so, cerr := compiler.ResolvePlugin(f)
 			if cerr != nil {
 				mu.Lock()
 				if errFirst == nil {
-					errFirst = fmt.Errorf("compile error %s: %w", f, cerr)
+					errFirst = fmt.Errorf("resolve plugin error %s: %w", f, cerr)
 				}
 				mu.Unlock()
 				return

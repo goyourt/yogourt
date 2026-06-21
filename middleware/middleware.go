@@ -3,6 +3,7 @@ package middleware
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/goyourt/yogourt/compiler"
@@ -11,9 +12,15 @@ import (
 const middlewaresPath = "/middleware/middleware.go"
 const ignoreChar = "^"
 
-var middlewares map[string]func(*gin.Context)
+var (
+	middlewaresMu sync.RWMutex
+	middlewares   map[string]func(*gin.Context)
+)
 
 func GetMiddleware(path string) []gin.HandlerFunc {
+	middlewaresMu.RLock()
+	defer middlewaresMu.RUnlock()
+
 	var middlewareList []gin.HandlerFunc
 	subroutes := strings.Split(path, "/")
 	for i := -1; i <= len(subroutes); i++ {
@@ -41,9 +48,9 @@ func GetMiddleware(path string) []gin.HandlerFunc {
 func LoadMiddlewares(basePath string) error {
 	src := basePath + middlewaresPath
 
-	so, err := compiler.CompileCached(src)
+	so, err := compiler.ResolvePlugin(src)
 	if err != nil {
-		return fmt.Errorf("compile middleware plugin failed: %w", err)
+		return fmt.Errorf("resolve middleware plugin failed: %w", err)
 	}
 
 	cb, err := compiler.LoadSymbol[map[string]func(*gin.Context)](so, "Callbacks")
@@ -51,10 +58,15 @@ func LoadMiddlewares(basePath string) error {
 		return fmt.Errorf("load middleware callbacks failed: %w", err)
 	}
 
+	middlewaresMu.Lock()
 	middlewares = *cb
+	middlewaresMu.Unlock()
 	return nil
 }
 
 func SetMiddlewares(mw map[string]func(*gin.Context)) {
+	middlewaresMu.Lock()
+	defer middlewaresMu.Unlock()
+
 	middlewares = mw
 }

@@ -1,8 +1,13 @@
 package providers
 
+import "sync"
+
 const fileConfigPath = "./configs/files.yaml"
 
-var fileConfigData *FileConfig
+var (
+	fileConfigOnce sync.Once
+	fileConfigData *FileConfig
+)
 
 type FileOptions struct {
 	FileFolder  *string `yaml:"file_folder,omitempty"`
@@ -16,13 +21,14 @@ type FileConfig struct {
 }
 
 func GetFileConfig() *FileConfig {
-	if fileConfigData == nil {
-		fileConfigData = &FileConfig{}
-		err := loadConfig(fileConfigPath, fileConfigData)
+	fileConfigOnce.Do(func() {
+		cfg := &FileConfig{}
+		err := loadConfig(fileConfigPath, cfg)
 		if err != nil {
 			panic(err)
 		}
-	}
+		fileConfigData = cfg
+	})
 	return fileConfigData
 }
 

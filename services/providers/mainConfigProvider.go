@@ -3,6 +3,7 @@ package providers
 import (
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -10,7 +11,10 @@ import (
 
 const mainConfigPath = "./configs/yogourt.yaml"
 
-var configData *MainConfig
+var (
+	configOnce sync.Once
+	configData *MainConfig
+)
 
 // MainConfig Structure of yogourt config file
 type MainConfig struct {
@@ -89,12 +93,13 @@ func loadConfig(filePath string, cfg any) error {
 }
 
 func GetMainConfig() *MainConfig {
-	if configData == nil {
-		configData = &MainConfig{}
-		err := loadConfig(mainConfigPath, configData)
+	configOnce.Do(func() {
+		cfg := &MainConfig{}
+		err := loadConfig(mainConfigPath, cfg)
 		if err != nil {
 			panic(err)
 		}
-	}
+		configData = cfg
+	})
 	return configData
 }
