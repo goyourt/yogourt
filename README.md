@@ -42,6 +42,28 @@ go mod tidy
 A config file `config.yaml` is generated at the root of the project with default values.
 Use this file to configure your app (database, server port, etc).
 
+You can load environment variables before YAML interpolation by declaring env files in the root config:
+
+```yaml
+env_files: .env
+```
+
+or with multiple files:
+
+```yaml
+env_files:
+  - .env
+  - .env.local
+```
+
+Then config values can reference environment variables:
+
+```yaml
+database:
+  user: ${DB_USER}
+  password: ${DB_PASSWORD}
+```
+
 #### Docker Compose
 
 A `docker-compose.yml` file is generated at the root of the project with multiple services.
