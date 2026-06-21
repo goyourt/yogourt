@@ -2,7 +2,6 @@ package routing
 
 import (
 	"fmt"
-	"path/filepath"
 	"runtime"
 	"sync"
 
@@ -24,24 +23,23 @@ func loadAPIHandlers(r *gin.Engine, basePath string) error {
 	}
 
 	var (
-		compileWg sync.WaitGroup
-		loadWg    sync.WaitGroup
-		mu        sync.Mutex
-		errFirst  error
-		tasks     []routeTask
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		errFirst error
+		tasks    []routeTask
 	)
 
-	// semaphore to limit concurrent compilations
+	// semaphore to limit concurrent plugin loading
 	sem := make(chan struct{}, runtime.NumCPU())
 
 	for _, f := range files {
-		compileWg.Add(1)
+		wg.Add(1)
 
-		// acquire semaphore before starting the compile goroutine
+		// acquire semaphore before starting the plugin loading goroutine
 		sem <- struct{}{}
 
 		go func() {
-			defer compileWg.Done()
+			defer wg.Done()
 			defer func() { <-sem }()
 
 			so, cerr := compiler.ResolvePlugin(f)
@@ -54,56 +52,35 @@ func loadAPIHandlers(r *gin.Engine, basePath string) error {
 				return
 			}
 
-			rp := routePathFor(basePath, f, filepath.Base(f))
+			rp := routePathFor(basePath, f)
 
-			routesCh := make(chan map[string]gin.HandlerFunc, 1)
-			mwCh := make(chan []gin.HandlerFunc, 1)
-
-			go func(src, soPath string) {
-				routes, lerr := compiler.LoadRoutes(soPath)
-				if lerr != nil {
-					mu.Lock()
-					if errFirst == nil {
-						errFirst = fmt.Errorf("load error %s: %w", src, lerr)
-					}
-					mu.Unlock()
-					routesCh <- nil
-					return
+			routes, lerr := compiler.LoadRoutes(so)
+			if lerr != nil {
+				mu.Lock()
+				if errFirst == nil {
+					errFirst = fmt.Errorf("load error %s: %w", f, lerr)
 				}
-				routesCh <- routes
-			}(f, so)
+				mu.Unlock()
+				return
+			}
 
-			go func(rpath string) {
-				baseMw := middleware.GetMiddleware(rpath)
-				mwCh <- baseMw
-			}(rp)
-
-			loadWg.Add(1)
-			go func(src string) {
-				defer loadWg.Done()
-				routes := <-routesCh
-				baseMw := <-mwCh
-				if routes == nil {
-					return
-				}
-				for m, h := range routes {
-					mws := make([]gin.HandlerFunc, len(baseMw), len(baseMw)+1)
-					copy(mws, baseMw)
-					mws = append(mws, h)
-					mu.Lock()
-					tasks = append(tasks, routeTask{
-						protocol:  m,
-						routePath: rp,
-						handlers:  mws,
-					})
-					mu.Unlock()
-				}
-			}(f)
+			baseMw := middleware.GetMiddleware(rp)
+			for m, h := range routes {
+				mws := make([]gin.HandlerFunc, len(baseMw), len(baseMw)+1)
+				copy(mws, baseMw)
+				mws = append(mws, h)
+				mu.Lock()
+				tasks = append(tasks, routeTask{
+					protocol:  m,
+					routePath: rp,
+					handlers:  mws,
+				})
+				mu.Unlock()
+			}
 		}()
 	}
 
-	compileWg.Wait()
-	loadWg.Wait()
+	wg.Wait()
 
 	if errFirst != nil {
 		return errFirst
