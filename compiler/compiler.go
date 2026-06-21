@@ -1,20 +1,16 @@
 package compiler
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
-	"time"
 )
 
 const compiledRootFolder = ".yogourt"
 
 func CompilePlugin(filePath string) (string, error) {
-	info, err := os.Stat(filePath)
-	if err != nil {
+	if _, err := os.Stat(filePath); err != nil {
 		return "", fmt.Errorf("file %s does not exist", filePath)
 	}
 
@@ -30,8 +26,10 @@ func CompilePlugin(filePath string) (string, error) {
 
 	outPath := filepath.Join(compiledRootFolder, relPath+".so")
 
-	if upToDate(filePath, outPath, info.ModTime()) {
+	if _, err := os.Stat(outPath); err == nil {
 		return outPath, nil
+	} else if !os.IsNotExist(err) {
+		return "", err
 	}
 
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
@@ -55,50 +53,4 @@ func CompilePlugin(filePath string) (string, error) {
 
 	fmt.Println("✅ Successfully compiled:", outPath)
 	return outPath, nil
-}
-
-func upToDate(src string, out string, srcMod time.Time) bool {
-	outInfo, err := os.Stat(out)
-	if err != nil {
-		return false
-	}
-
-	if srcMod.After(outInfo.ModTime()) {
-		return false
-	}
-
-	if isDir(src) {
-		return !anyGoFileNewer(src, outInfo.ModTime())
-	}
-
-	return true
-}
-
-var errRebuild = errors.New("rebuild")
-
-func anyGoFileNewer(dir string, soTime time.Time) bool {
-	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		if strings.HasSuffix(path, ".go") {
-			if info, err := d.Info(); err == nil {
-				if info.ModTime().After(soTime) {
-					return errRebuild
-				}
-			}
-		}
-		return nil
-	})
-
-	return errors.Is(err, errRebuild)
-
-}
-
-func isDir(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
 }
