@@ -3,13 +3,12 @@ package compiler
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 )
 
 const compiledRootFolder = ".yogourt"
 
-func CompilePlugin(filePath string) (string, error) {
+func PluginPath(filePath string) (string, error) {
 	if _, err := os.Stat(filePath); err != nil {
 		return "", fmt.Errorf("file %s does not exist", filePath)
 	}
@@ -24,7 +23,14 @@ func CompilePlugin(filePath string) (string, error) {
 		return "", err
 	}
 
-	outPath := filepath.Join(compiledRootFolder, relPath+".so")
+	return filepath.Join(compiledRootFolder, relPath+".so"), nil
+}
+
+func ResolvePlugin(filePath string) (string, error) {
+	outPath, err := PluginPath(filePath)
+	if err != nil {
+		return "", err
+	}
 
 	if _, err := os.Stat(outPath); err == nil {
 		return outPath, nil
@@ -32,25 +38,5 @@ func CompilePlugin(filePath string) (string, error) {
 		return "", err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
-		return "", err
-	}
-
-	fmt.Println("🔨 Compiling plugin:", outPath)
-	cmd := exec.Command(
-		"go", "build",
-		"-buildmode=plugin",
-		"-o", outPath,
-		filePath,
-	)
-
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("error compiling plugin: %w", err)
-	}
-
-	fmt.Println("✅ Successfully compiled:", outPath)
-	return outPath, nil
+	return "", fmt.Errorf("compiled plugin %s does not exist", outPath)
 }

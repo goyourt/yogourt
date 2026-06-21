@@ -3,24 +3,9 @@ package compiler
 import (
 	"fmt"
 	"plugin"
-	"sync"
 
 	"github.com/gin-gonic/gin"
 )
-
-var pluginCache sync.Map
-
-func CompileCached(srcGoFile string) (string, error) {
-	if v, ok := pluginCache.Load(srcGoFile); ok {
-		return v.(string), nil
-	}
-	so, err := CompilePlugin(srcGoFile)
-	if err != nil {
-		return "", err
-	}
-	pluginCache.Store(srcGoFile, so)
-	return so, nil
-}
 
 func LoadRoutes(soPath string) (map[string]gin.HandlerFunc, error) {
 	plg, err := plugin.Open(soPath)

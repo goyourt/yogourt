@@ -3,6 +3,7 @@ package providers
 import (
 	"fmt"
 	"log"
+	"sync"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
@@ -10,20 +11,24 @@ import (
 )
 
 // DB global instance of the database
-var db *gorm.DB
-var cache *redis.Client
+var (
+	dbOnce    sync.Once
+	cacheOnce sync.Once
+	db        *gorm.DB
+	cache     *redis.Client
+)
 
 func GetDB() *gorm.DB {
-	if db == nil {
+	dbOnce.Do(func() {
 		db = InitDB()
-	}
+	})
 	return db
 }
 
 func GetCache() *redis.Client {
-	if cache == nil {
+	cacheOnce.Do(func() {
 		cache = InitCache()
-	}
+	})
 	return cache
 }
 

@@ -64,5 +64,7 @@ func Initialize(apiFolder string) {
 	//}
 	host := defaultHost
 
-	r.Run(host + ":" + strconv.Itoa(serverConfig.Port))
+	if err := r.Run(host + ":" + strconv.Itoa(serverConfig.Port)); err != nil {
+		log.Fatal("Error starting server: ", err)
+	}
 }
