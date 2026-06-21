@@ -9,7 +9,7 @@ import (
 )
 
 func isGoFile(name string) bool {
-	return strings.HasSuffix(name, ".go")
+	return strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go")
 }
 
 func routePathFor(basePath, fullPath, fileName string) string {
