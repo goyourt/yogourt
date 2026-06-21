@@ -77,7 +77,7 @@ func ReadUploadedFile(c *gin.Context, field string, fileType string) (interfaces
 	defer file.Close()
 
 	if fileHeader.Size > int64(*cfg.MaxFileSize) {
-		return fileInterface, fmt.Errorf("%s exceeds %sB limit", field, *cfg.MaxFileSize)
+		return fileInterface, fmt.Errorf("%s exceeds %dB limit", field, *cfg.MaxFileSize)
 	}
 
 	filename := sanitizeFilename(fileHeader.Filename)
