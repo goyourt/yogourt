@@ -26,7 +26,6 @@ type MainConfig struct {
 	AppName  string   `yaml:"app_name"`
 	Version  string   `yaml:"version"`
 	Mode     string   `yaml:"mode"`
-	EnvFile  string   `yaml:"env_file"` // Deprecated: use env_files.
 	EnvFiles EnvFiles `yaml:"env_files"`
 
 	Server struct {
@@ -104,7 +103,6 @@ func loadConfig(filePath string, cfg any) error {
 }
 
 type envFileConfig struct {
-	EnvFile  string   `yaml:"env_file"`
 	EnvFiles EnvFiles `yaml:"env_files"`
 }
 
@@ -165,12 +163,7 @@ func envFilePaths(configPath string, configContent []byte) ([]string, error) {
 		return cfg.EnvFiles, nil
 	}
 
-	envFile := strings.TrimSpace(cfg.EnvFile)
-	if envFile == "" {
-		return nil, nil
-	}
-
-	return []string{envFile}, nil
+	return nil, nil
 }
 
 func envFilePathsFromMainConfig() ([]string, error) {
