@@ -26,6 +26,16 @@ func TestRoutePathForStaticAndLegacyDynamicSegments(t *testing.T) {
 	}
 }
 
+func TestRoutePathForDynamicTrailingUnderscoreSegment(t *testing.T) {
+	base := filepath.Join("project", "api")
+	full := filepath.Join(base, "users", "userId_", "posts", "postSlug_", "handler.go")
+	got := routePathFor(base, full)
+	want := "/api/users/:userId/posts/:postSlug"
+	if got != want {
+		t.Errorf("expected %s, got %s", want, got)
+	}
+}
+
 func TestRoutePathForRootAPIFile(t *testing.T) {
 	base := filepath.Join("project", "api")
 	full := filepath.Join(base, "index.go")

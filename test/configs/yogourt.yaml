@@ -1,6 +1,7 @@
 app_name: "test-app"
 version: "1.0.0"
 mode: "development"
+env_files: "./configs/yogourt.env"
 
 server:
   port: 1000
@@ -27,5 +28,5 @@ paths:
   api_folder: "api_folder"
 
 security:
-  secret_key: "secret_key"
+  secret_key: "${YOGOURT_CONFIG_TEST_SECRET}"
   token_expires: 1000 # one day
