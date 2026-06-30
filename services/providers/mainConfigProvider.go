@@ -3,9 +3,12 @@ package providers
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
 )
 
@@ -14,13 +17,16 @@ const mainConfigPath = "./configs/yogourt.yaml"
 var (
 	configOnce sync.Once
 	configData *MainConfig
+	envOnce    sync.Once
+	envErr     error
 )
 
 // MainConfig Structure of yogourt config file
 type MainConfig struct {
-	AppName string `yaml:"app_name"`
-	Version string `yaml:"version"`
-	Mode    string `yaml:"mode"`
+	AppName  string   `yaml:"app_name"`
+	Version  string   `yaml:"version"`
+	Mode     string   `yaml:"mode"`
+	EnvFiles EnvFiles `yaml:"env_files"`
 
 	Server struct {
 		Port int    `yaml:"port"`
@@ -82,11 +88,103 @@ func loadConfig(filePath string, cfg any) error {
 		return fmt.Errorf("Impossible to read config file %s : %v", filePath, err)
 	}
 
+	if err := loadConfiguredEnv(filePath, file); err != nil {
+		return err
+	}
+
 	replaced := os.ExpandEnv(string(file))
 
 	err = yaml.Unmarshal([]byte(replaced), cfg)
 	if err != nil {
 		return fmt.Errorf("Error parsing YAML : %v", err)
+	}
+
+	return nil
+}
+
+type envFileConfig struct {
+	EnvFiles EnvFiles `yaml:"env_files"`
+}
+
+type EnvFiles []string
+
+func (e *EnvFiles) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.ScalarNode:
+		envFile := strings.TrimSpace(value.Value)
+		if envFile == "" {
+			*e = nil
+			return nil
+		}
+		*e = []string{envFile}
+	case yaml.SequenceNode:
+		var envFiles []string
+		for _, node := range value.Content {
+			envFile := strings.TrimSpace(node.Value)
+			if envFile != "" {
+				envFiles = append(envFiles, envFile)
+			}
+		}
+		*e = envFiles
+	default:
+		return fmt.Errorf("env_files must be a string or a list of strings")
+	}
+
+	return nil
+}
+
+func loadConfiguredEnv(configPath string, configContent []byte) error {
+	envOnce.Do(func() {
+		envFiles, err := envFilePaths(configPath, configContent)
+		if err != nil {
+			envErr = err
+			return
+		}
+		if len(envFiles) == 0 && filepath.Clean(configPath) != filepath.Clean(mainConfigPath) {
+			envFiles, err = envFilePathsFromMainConfig()
+			if err != nil {
+				envErr = err
+				return
+			}
+		}
+		envErr = loadEnvFiles(envFiles)
+	})
+
+	return envErr
+}
+
+func envFilePaths(configPath string, configContent []byte) ([]string, error) {
+	cfg := &envFileConfig{}
+	if err := yaml.Unmarshal(configContent, cfg); err != nil {
+		return nil, fmt.Errorf("Error parsing YAML env file config from %s : %v", configPath, err)
+	}
+
+	if len(cfg.EnvFiles) > 0 {
+		return cfg.EnvFiles, nil
+	}
+
+	return nil, nil
+}
+
+func envFilePathsFromMainConfig() ([]string, error) {
+	file, err := os.ReadFile(mainConfigPath)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("Impossible to read config file %s : %v", mainConfigPath, err)
+	}
+
+	return envFilePaths(mainConfigPath, file)
+}
+
+func loadEnvFiles(filePaths []string) error {
+	if len(filePaths) == 0 {
+		return nil
+	}
+
+	if err := godotenv.Load(filePaths...); err != nil {
+		return fmt.Errorf("Impossible to load env files %v : %v", filePaths, err)
 	}
 
 	return nil
