@@ -1,0 +1,3 @@
+package authorization
+
+func main() {}

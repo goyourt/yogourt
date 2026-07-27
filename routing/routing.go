@@ -3,6 +3,7 @@ package routing
 import (
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -31,19 +32,8 @@ func Initialize(apiFolder string) {
 
 	r := gin.Default()
 
-	corsConfig := providers.GetMainConfig().CORS
-
-	if len(corsConfig.AllowedOrigins) == 0 && !corsConfig.AllowAllOrigins {
-		corsConfig.AllowAllOrigins = true
-	}
-
-	r.Use(cors.New(cors.Config{
-		AllowOrigins:     corsConfig.AllowedOrigins,
-		AllowMethods:     corsConfig.AllowedMethods,
-		AllowHeaders:     corsConfig.AllowedHeaders,
-		AllowCredentials: corsConfig.AllowCredentials,
-		MaxAge:           corsConfig.MaxAge * time.Hour,
-	}))
+	mainConfig := providers.GetMainConfig()
+	r.Use(cors.New(buildCORSConfig(mainConfig)))
 
 	r.OPTIONS("/*path", func(c *gin.Context) {
 		c.AbortWithStatus(204)
@@ -57,14 +47,36 @@ func Initialize(apiFolder string) {
 		log.Fatal("Error loading handlers: ", err)
 	}
 
-	serverConfig := providers.GetMainConfig().Server
-	//host := serverConfig.Host
-	//if host == "" {
-	//	host = defaultHost
-	//}
-	host := defaultHost
-
-	if err := r.Run(host + ":" + strconv.Itoa(serverConfig.Port)); err != nil {
+	serverConfig := mainConfig.Server
+	if err := r.Run(listenAddress(serverConfig.Host, serverConfig.Port)); err != nil {
 		log.Fatal("Error starting server: ", err)
 	}
+}
+
+func buildCORSConfig(mainConfig *providers.MainConfig) cors.Config {
+	config := mainConfig.CORS
+	allowAllOrigins := config.AllowAllOrigins
+	if len(config.AllowedOrigins) == 0 && !allowAllOrigins {
+		allowAllOrigins = true
+	}
+	allowedOrigins := config.AllowedOrigins
+	if allowAllOrigins {
+		allowedOrigins = nil
+	}
+
+	return cors.Config{
+		AllowAllOrigins:  allowAllOrigins,
+		AllowOrigins:     allowedOrigins,
+		AllowMethods:     config.AllowedMethods,
+		AllowHeaders:     config.AllowedHeaders,
+		AllowCredentials: config.AllowCredentials,
+		MaxAge:           config.MaxAge * time.Hour,
+	}
+}
+
+func listenAddress(host string, port int) string {
+	if host == "" {
+		host = defaultHost
+	}
+	return net.JoinHostPort(host, strconv.Itoa(port))
 }
