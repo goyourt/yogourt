@@ -7,13 +7,17 @@ import (
 	"github.com/goyourt/yogourt/authorization"
 )
 
-func TestValidateRoutePermissionsMissingSymbol(t *testing.T) {
-	violations := validateRoutePermissions("users/index.go", nil, false, []string{"GET", "POST"}, nil)
+func TestValidateGroupMissingSymbol(t *testing.T) {
+	files := []routeFile{
+		{file: "users/index.go", methods: []string{"GET", "POST"}},
+	}
+
+	violations := validateRoutePermissionGroup("/api/users", files, nil)
 
 	if len(violations) != 1 {
 		t.Fatalf("expected 1 violation for a missing symbol, got %d: %v", len(violations), violations)
 	}
-	if violations[0].File != "users/index.go" || violations[0].Method != "Permissions" {
+	if violations[0].File != "/api/users" || violations[0].Method != "Permissions" {
 		t.Errorf("unexpected violation location: %+v", violations[0])
 	}
 	if !strings.Contains(violations[0].Problem, "missing required symbol") {
@@ -21,22 +25,95 @@ func TestValidateRoutePermissionsMissingSymbol(t *testing.T) {
 	}
 }
 
-func TestValidateRoutePermissionsUtilityFileWithoutHandlers(t *testing.T) {
-	// A file exporting no HTTP handler registers no route: it must not be
+func TestValidateGroupUtilityFolderWithoutHandlers(t *testing.T) {
+	// A folder exporting no HTTP handler registers no route: it must not be
 	// forced to declare a Permissions symbol.
-	violations := validateRoutePermissions("shared/helpers.go", nil, false, nil, nil)
+	files := []routeFile{{file: "shared/helpers.go"}}
+
+	violations := validateRoutePermissionGroup("/api/shared", files, nil)
 
 	if len(violations) != 0 {
-		t.Fatalf("expected no violation for a handler-less file, got %v", violations)
+		t.Fatalf("expected no violation for a handler-less folder, got %v", violations)
 	}
 }
 
-func TestValidateRoutePermissionsEmptyPermission(t *testing.T) {
+func TestValidateGroupSingleDeclarationCoversAllFiles(t *testing.T) {
+	// Several files serve the same route (the URL comes from the folder):
+	// ONE file declares the permissions of every method of the folder.
+	files := []routeFile{
+		{file: "users/users.go", methods: []string{"GET"}, hasSymbol: true, permissions: map[string]string{
+			"GET":  "user.read",
+			"POST": "user.create",
+		}},
+		{file: "users/test.go", methods: []string{"POST"}},
+	}
+
+	violations := validateRoutePermissionGroup("/api/users", files, nil)
+
+	if len(violations) != 0 {
+		t.Fatalf("expected no violation for a single covering declaration, got %v", violations)
+	}
+}
+
+func TestValidateGroupMultipleDeclarationsRefused(t *testing.T) {
+	files := []routeFile{
+		{file: "users/users.go", methods: []string{"GET"}, hasSymbol: true, permissions: map[string]string{"GET": "user.read"}},
+		{file: "users/test.go", methods: []string{"POST"}, hasSymbol: true, permissions: map[string]string{"POST": "user.create"}},
+	}
+
+	violations := validateRoutePermissionGroup("/api/users", files, nil)
+
+	if len(violations) != 1 {
+		t.Fatalf("expected 1 violation, got %d: %v", len(violations), violations)
+	}
+	problem := violations[0].Problem
+	if !strings.Contains(problem, "single file") || !strings.Contains(problem, "users/users.go") || !strings.Contains(problem, "users/test.go") {
+		t.Errorf("the violation must name every declaring file: %+v", violations[0])
+	}
+}
+
+func TestValidateGroupUndeclaredMethodNamesItsFile(t *testing.T) {
+	files := []routeFile{
+		{file: "users/users.go", methods: []string{"GET"}, hasSymbol: true, permissions: map[string]string{"GET": "user.read"}},
+		{file: "users/test.go", methods: []string{"POST"}},
+	}
+
+	violations := validateRoutePermissionGroup("/api/users", files, nil)
+
+	if len(violations) != 1 {
+		t.Fatalf("expected 1 violation, got %d: %v", len(violations), violations)
+	}
+	if violations[0].File != "users/test.go" || violations[0].Method != "POST" || !strings.Contains(violations[0].Problem, "no permission declared") {
+		t.Errorf("unexpected violation: %+v", violations[0])
+	}
+}
+
+func TestValidateGroupOrphanEntry(t *testing.T) {
+	files := []routeFile{
+		{file: "index.go", methods: []string{"GET"}, hasSymbol: true, permissions: map[string]string{
+			"GET":    "article.read",
+			"DELETE": "article.delete",
+		}},
+	}
+
+	violations := validateRoutePermissionGroup("/api", files, nil)
+
+	if len(violations) != 1 {
+		t.Fatalf("expected 1 violation, got %d: %v", len(violations), violations)
+	}
+	if violations[0].File != "index.go" || violations[0].Method != "DELETE" || !strings.Contains(violations[0].Problem, "no exported handler") {
+		t.Errorf("unexpected violation: %+v", violations[0])
+	}
+}
+
+func TestValidateGroupEmptyPermission(t *testing.T) {
 	// An empty permission can never be granted and would turn every request
 	// into a 500: it must be a boot violation even without a strict list.
-	permissions := map[string]string{"GET": ""}
+	files := []routeFile{
+		{file: "index.go", methods: []string{"GET"}, hasSymbol: true, permissions: map[string]string{"GET": ""}},
+	}
 
-	violations := validateRoutePermissions("index.go", permissions, true, []string{"GET"}, nil)
+	violations := validateRoutePermissionGroup("/api", files, nil)
 
 	if len(violations) != 1 {
 		t.Fatalf("expected 1 violation, got %d: %v", len(violations), violations)
@@ -46,43 +123,16 @@ func TestValidateRoutePermissionsEmptyPermission(t *testing.T) {
 	}
 }
 
-func TestValidateRoutePermissionsUndeclaredMethod(t *testing.T) {
-	permissions := map[string]string{"GET": "article.read"}
-
-	violations := validateRoutePermissions("index.go", permissions, true, []string{"GET", "POST"}, nil)
-
-	if len(violations) != 1 {
-		t.Fatalf("expected 1 violation, got %d: %v", len(violations), violations)
-	}
-	if violations[0].Method != "POST" || !strings.Contains(violations[0].Problem, "no permission declared") {
-		t.Errorf("unexpected violation: %+v", violations[0])
-	}
-}
-
-func TestValidateRoutePermissionsOrphanEntry(t *testing.T) {
-	permissions := map[string]string{
-		"GET":    "article.read",
-		"DELETE": "article.delete",
-	}
-
-	violations := validateRoutePermissions("index.go", permissions, true, []string{"GET"}, nil)
-
-	if len(violations) != 1 {
-		t.Fatalf("expected 1 violation, got %d: %v", len(violations), violations)
-	}
-	if violations[0].Method != "DELETE" || !strings.Contains(violations[0].Problem, "no exported handler") {
-		t.Errorf("unexpected violation: %+v", violations[0])
-	}
-}
-
-func TestValidateRoutePermissionsUnknownPermission(t *testing.T) {
-	permissions := map[string]string{
-		"GET":  "article.reed",
-		"POST": authorization.Public,
+func TestValidateGroupUnknownPermission(t *testing.T) {
+	files := []routeFile{
+		{file: "index.go", methods: []string{"GET", "POST"}, hasSymbol: true, permissions: map[string]string{
+			"GET":  "article.reed",
+			"POST": authorization.Public,
+		}},
 	}
 	known := []authorization.Action{"article.read"}
 
-	violations := validateRoutePermissions("index.go", permissions, true, []string{"GET", "POST"}, known)
+	violations := validateRoutePermissionGroup("/api", files, known)
 
 	if len(violations) != 1 {
 		t.Fatalf("expected 1 violation, got %d: %v", len(violations), violations)
@@ -92,41 +142,30 @@ func TestValidateRoutePermissionsUnknownPermission(t *testing.T) {
 	}
 }
 
-func TestValidateRoutePermissionsNoStrictModeWithoutKnownList(t *testing.T) {
-	permissions := map[string]string{"GET": "anything.goes"}
+func TestValidateGroupNoStrictModeWithoutKnownList(t *testing.T) {
+	files := []routeFile{
+		{file: "index.go", methods: []string{"GET"}, hasSymbol: true, permissions: map[string]string{"GET": "anything.goes"}},
+	}
 
-	violations := validateRoutePermissions("index.go", permissions, true, []string{"GET"}, nil)
+	violations := validateRoutePermissionGroup("/api", files, nil)
 
 	if len(violations) != 0 {
 		t.Fatalf("expected no violation without a known permission list, got %v", violations)
 	}
 }
 
-func TestValidateRoutePermissionsValidDeclaration(t *testing.T) {
-	permissions := map[string]string{
-		"GET":    "article.read",
-		"POST":   authorization.Public,
-		"DELETE": "article.delete",
-	}
-	known := []authorization.Action{"article.read", "article.delete"}
-
-	violations := validateRoutePermissions("index.go", permissions, true, []string{"GET", "POST", "DELETE"}, known)
-
-	if len(violations) != 0 {
-		t.Fatalf("expected no violation, got %v", violations)
-	}
-}
-
-func TestValidateRoutePermissionsCollectsAllViolations(t *testing.T) {
-	permissions := map[string]string{
-		"GET": "article.reed", // unknown (d)
-		"PUT": "article.read", // orphan entry (c)
+func TestValidateGroupCollectsAllViolations(t *testing.T) {
+	files := []routeFile{
+		{file: "a.go", methods: []string{"GET", "POST"}, hasSymbol: true, permissions: map[string]string{
+			"GET": "article.reed", // unknown
+			"PUT": "article.read", // orphan entry
+		}},
 	}
 	known := []authorization.Action{"article.read"}
 
-	violations := validateRoutePermissions("index.go", permissions, true, []string{"GET", "POST"}, known)
+	violations := validateRoutePermissionGroup("/api", files, known)
 
-	// POST has no entry (b), GET has an unknown value (d), PUT is orphan (c).
+	// POST has no entry, GET has an unknown value, PUT is orphan.
 	if len(violations) != 3 {
 		t.Fatalf("expected 3 violations, got %d: %v", len(violations), violations)
 	}

@@ -14,7 +14,7 @@ import (
 )
 
 // routeViolation is one route permission declaration problem found while
-// validating a route file at startup (D2).
+// validating a route at startup (D2).
 type routeViolation struct {
 	File    string
 	Method  string
@@ -25,44 +25,85 @@ func (v routeViolation) String() string {
 	return fmt.Sprintf("%s: %s: %s", v.File, v.Method, v.Problem)
 }
 
-// validateRoutePermissions checks the Permissions declaration of one route
-// file against its exported handler methods. hasSymbol reports whether the
-// file exports a Permissions symbol at all. known is the optional list of
-// permissions the engine knows about; when non-empty, any declared value
-// other than authorization.Public must belong to it.
-func validateRoutePermissions(file string, permissions map[string]string, hasSymbol bool, methods []string, known []authorization.Action) []routeViolation {
-	if !hasSymbol {
-		// A file without any exported handler registers no route: it needs no
-		// Permissions symbol (utility files under the API folder stay valid).
-		if len(methods) == 0 {
+// routeFile is one loaded plugin file contributing handlers to a route. The
+// URL being derived from the folder, several files may serve the same route.
+type routeFile struct {
+	file        string
+	methods     []string
+	permissions map[string]string
+	hasSymbol   bool
+}
+
+// validateRoutePermissionGroup checks the Permissions declaration of one
+// route against the handlers exported by ALL the files of its folder. The
+// route permissions are declared in exactly one of those files, covering
+// every exported method of the folder; several declarations for the same
+// route refuse the boot. known is the optional list of permissions the
+// engine knows about; when non-empty, any declared value other than
+// authorization.Public must belong to it.
+func validateRoutePermissionGroup(route string, files []routeFile, known []authorization.Action) []routeViolation {
+	sortedFiles := append([]routeFile(nil), files...)
+	sort.Slice(sortedFiles, func(i, j int) bool { return sortedFiles[i].file < sortedFiles[j].file })
+
+	// Union of the exported methods of the folder, with the first exporting
+	// file kept for reporting.
+	methodFiles := make(map[string]string)
+	var declaring []routeFile
+	for _, f := range sortedFiles {
+		for _, method := range f.methods {
+			if _, seen := methodFiles[method]; !seen {
+				methodFiles[method] = f.file
+			}
+		}
+		if f.hasSymbol {
+			declaring = append(declaring, f)
+		}
+	}
+
+	if len(declaring) == 0 {
+		// A folder without any exported handler registers no route: it needs
+		// no Permissions symbol (utility files stay valid).
+		if len(methodFiles) == 0 {
 			return nil
 		}
 
 		return []routeViolation{{
-			File:    file,
+			File:    route,
 			Method:  "Permissions",
-			Problem: "missing required symbol: var Permissions map[string]string",
+			Problem: "missing required symbol: var Permissions map[string]string (declare the route permissions in one file of this folder)",
+		}}
+	}
+	if len(declaring) > 1 {
+		names := make([]string, len(declaring))
+		for i, f := range declaring {
+			names[i] = f.file
+		}
+
+		return []routeViolation{{
+			File:    route,
+			Method:  "Permissions",
+			Problem: fmt.Sprintf("declared in %d files (%s): route permissions must be declared in a single file", len(declaring), strings.Join(names, ", ")),
 		}}
 	}
 
+	declaration := declaring[0]
 	knownSet := make(map[string]bool, len(known))
 	for _, permission := range known {
 		knownSet[string(permission)] = true
 	}
-	methodSet := make(map[string]bool, len(methods))
-	for _, method := range methods {
-		methodSet[method] = true
-	}
 
 	var violations []routeViolation
 
-	sortedMethods := append([]string(nil), methods...)
-	sort.Strings(sortedMethods)
-	for _, method := range sortedMethods {
-		permission, declared := permissions[method]
+	methods := make([]string, 0, len(methodFiles))
+	for method := range methodFiles {
+		methods = append(methods, method)
+	}
+	sort.Strings(methods)
+	for _, method := range methods {
+		permission, declared := declaration.permissions[method]
 		if !declared {
 			violations = append(violations, routeViolation{
-				File:    file,
+				File:    methodFiles[method],
 				Method:  method,
 				Problem: "no permission declared for this exported method",
 			})
@@ -74,7 +115,7 @@ func validateRoutePermissions(file string, permissions map[string]string, hasSym
 			// be granted and Context.Authorize would answer 500 on every
 			// request. Catch it at boot even without a strict list (D2).
 			violations = append(violations, routeViolation{
-				File:    file,
+				File:    declaration.file,
 				Method:  method,
 				Problem: "empty permission declared",
 			})
@@ -83,22 +124,22 @@ func validateRoutePermissions(file string, permissions map[string]string, hasSym
 		}
 		if len(known) > 0 && permission != authorization.Public && !knownSet[permission] {
 			violations = append(violations, routeViolation{
-				File:    file,
+				File:    declaration.file,
 				Method:  method,
 				Problem: fmt.Sprintf("unknown permission %q", permission),
 			})
 		}
 	}
 
-	entries := make([]string, 0, len(permissions))
-	for entry := range permissions {
+	entries := make([]string, 0, len(declaration.permissions))
+	for entry := range declaration.permissions {
 		entries = append(entries, entry)
 	}
 	sort.Strings(entries)
 	for _, entry := range entries {
-		if !methodSet[entry] {
+		if _, exported := methodFiles[entry]; !exported {
 			violations = append(violations, routeViolation{
-				File:    file,
+				File:    declaration.file,
 				Method:  entry,
 				Problem: "permission declared but no exported handler with this name",
 			})
