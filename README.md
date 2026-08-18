@@ -12,6 +12,7 @@ Yogourt est un framework Go pour construire des API avec Gin, un routage basé s
 | [Configuration](docs/configuration.md) | Fichiers YAML, variables d’environnement et limites runtime |
 | [Routage](docs/routing.md) | Routes fichiers, handlers, paramètres, middlewares et plugins |
 | [Services](docs/services.md) | Modèles, base de données, authentification, mots de passe et fichiers |
+| [Autorisation](docs/authorization.md) | RBAC, ABAC, permissions par route, scopes et statuts HTTP |
 | [Migration vers la v2](docs/migration-v2.md) | Changements incompatibles et checklist de migration |
 
 ## Prérequis
