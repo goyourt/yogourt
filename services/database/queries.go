@@ -28,12 +28,17 @@ func CreateDataWriter(c *gin.Context) DataWriter {
 	return DataWriter{currentUser}
 }
 
-func GetAll[T interfaces.BaseInterface](objs *[]T, values map[string]any) {
-	GetAllPaginated(objs, values, 0, 0)
+// GetAll loads every record matching values into objs. It returns GORM's
+// error: a database outage is no longer indistinguishable from an empty
+// result.
+func GetAll[T interfaces.BaseInterface](objs *[]T, values map[string]any) error {
+	return GetAllPaginated(objs, values, 0, 0)
 }
 
-func GetAllPaginated[T interfaces.BaseInterface](objs *[]T, values map[string]any, page int, pageSize int) {
-	SearchQuery(values, objs, page, pageSize).Distinct().Find(objs)
+// GetAllPaginated behaves like GetAll with pagination. It returns GORM's
+// error.
+func GetAllPaginated[T interfaces.BaseInterface](objs *[]T, values map[string]any, page int, pageSize int) error {
+	return SearchQuery(values, objs, page, pageSize).Distinct().Find(objs).Error
 }
 
 // GetOneBy loads the first record matching values into obj. It returns
