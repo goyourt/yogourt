@@ -267,7 +267,7 @@ La v2 ajoute notamment :
 - la clé de filtre <code>orderBy</code> ;
 - <code>UpsertRelations</code>.
 
-Ces ajouts ne corrigent pas encore la gestion des erreurs des lectures : <code>GetOneBy</code>, <code>GetAll</code> et <code>GetAllPaginated</code> ne retournent toujours aucune erreur SQL.
+Les lectures retournent désormais l’erreur GORM : <code>GetOneBy</code> (y compris <code>gorm.ErrRecordNotFound</code>), <code>GetAll</code>, <code>GetAllPaginated</code>, <code>HydrateRelation</code> et <code>HydrateManyToManyRelation</code>. L’ajout d’une valeur de retour ne casse pas les sites d’appel existants, mais vérifiez ces erreurs sur vos chemins critiques.
 
 Pendant la migration :
 

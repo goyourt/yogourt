@@ -45,19 +45,23 @@ func JoinTables[T interfaces.BaseInterface](values map[string]any, objType *T) *
 	return query.Preload(clause.Associations)
 }
 
-func HydrateRelation(obj interfaces.BaseInterface, table string, relation interfaces.BaseInterface, relationId int) {
+// HydrateRelation preloads the relation when it has not been loaded yet. It
+// returns GORM's error; call sites that ignore it keep compiling.
+func HydrateRelation(obj interfaces.BaseInterface, table string, relation interfaces.BaseInterface, relationId int) error {
 	if relationId == 0 || !reflect.ValueOf(relation).IsNil() {
-		return
+		return nil
 	}
 
-	providers.GetDB().Preload(table).Find(obj, obj.GetID())
+	return providers.GetDB().Preload(table).Find(obj, obj.GetID()).Error
 }
 
-func HydrateManyToManyRelation[T interfaces.BaseInterface](obj interfaces.BaseInterface, table string, relation *[]T) {
+// HydrateManyToManyRelation preloads a many-to-many relation. It returns
+// GORM's error; call sites that ignore it keep compiling.
+func HydrateManyToManyRelation[T interfaces.BaseInterface](obj interfaces.BaseInterface, table string, relation *[]T) error {
 	if !reflect.ValueOf(relation).IsNil() {
-		return
+		return nil
 	}
-	providers.GetDB().Preload(table).Find(obj, obj.GetID())
+	return providers.GetDB().Preload(table).Find(obj, obj.GetID()).Error
 }
 
 func UpsertRelations(c *gin.Context, obj interfaces.BaseInterface, relations []string) error {

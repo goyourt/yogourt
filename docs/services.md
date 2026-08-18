@@ -54,12 +54,13 @@ Les champs ID, UUID et audit sont stockés via des pointeurs. Utilisez leurs get
 
 ~~~go
 user := &models.User{}
-database.GetOneBy(user, map[string]any{
+err := database.GetOneBy(user, map[string]any{
 	"uuid": userUUID,
 })
-
-if user.GetID() == 0 {
-	// Introuvable, ou erreur SQL non exposée par l’API actuelle.
+if errors.Is(err, gorm.ErrRecordNotFound) {
+	// Introuvable.
+} else if err != nil {
+	// Panne SQL/réseau : distincte d'un « non trouvé ».
 }
 ~~~
 
@@ -70,7 +71,7 @@ Les méthodes de <code>interfaces.Base</code> ont des receivers pointeurs. Utili
 ~~~go
 var users []*models.User
 
-database.GetAll(&users, map[string]any{
+err := database.GetAll(&users, map[string]any{
 	"name":   database.Like("alb"),
 	"status": []string{"active", "invited"},
 })
@@ -80,7 +81,7 @@ Pagination :
 
 ~~~go
 var users []*models.User
-database.GetAllPaginated(&users, filters, 1, 25)
+err := database.GetAllPaginated(&users, filters, 1, 25)
 ~~~
 
 Une page ou une taille inférieure à 1 désactive la pagination.
@@ -108,7 +109,7 @@ err := database.
 	Error
 ~~~
 
-Contrairement à <code>GetOneBy</code>, <code>GetAll</code> et <code>GetAllPaginated</code>, cette forme permet de récupérer <code>Error</code>.
+<code>GetOneBy</code>, <code>GetAll</code> et <code>GetAllPaginated</code> retournent désormais l’erreur GORM (<code>gorm.ErrRecordNotFound</code> inclus pour <code>GetOneBy</code>) : une panne SQL n’est plus confondue avec un résultat vide. <code>SearchQuery</code> reste la porte d’entrée pour les requêtes GORM avancées.
 
 ## Écritures en base
 
@@ -162,9 +163,11 @@ err := providers.GetDB().Transaction(func(tx *gorm.DB) error {
 Les helpers disponibles sont :
 
 ~~~go
-database.HydrateRelation(user, "Profile", user.Profile, user.ProfileID)
-err := database.UpsertRelations(c, user, []string{"Profile"})
+err := database.HydrateRelation(user, "Profile", user.Profile, user.ProfileID)
+err = database.UpsertRelations(c, user, []string{"Profile"})
 ~~~
+
+<code>HydrateRelation</code> et <code>HydrateManyToManyRelation</code> retournent l’erreur GORM ; les sites d’appel qui l’ignorent continuent de compiler.
 
 <code>UpsertRelations</code> recherche des méthodes <code>GetRelation</code> et <code>SetRelation</code> par réflexion. Il ne prend pas encore en charge l’upsert many-to-many.
 
@@ -319,7 +322,6 @@ Si <code>server.host</code> est vide, le résultat est <code>http://localhost:&l
 
 ## Limites transverses
 
-- plusieurs helpers de lecture DB ne retournent aucune erreur ;
 - les providers globaux ne prennent pas de <code>context.Context</code> ;
 - les échecs de configuration utilisent panic ou <code>log.Fatal</code> ;
 - les comportements de sécurité, de stockage et de concurrence doivent être renforcés avant un usage critique.
