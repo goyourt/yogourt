@@ -96,7 +96,17 @@ Sans `routing.WithAuthorizer(engine)`, rien ne change : aucune déclaration exig
 
 ### 3. Déclarer les permissions des routes
 
-Chaque fichier route exporte `var Permissions map[string]string` : méthode HTTP → permission, ou `authorization.Public` pour une exemption explicite.
+Les permissions se déclarent **par route, pas par fichier** : `var Permissions map[string]string` (méthode HTTP → permission, ou `authorization.Public` pour une exemption explicite). L'URL venant du dossier, plusieurs fichiers peuvent servir la même route — dans ce cas **un seul** d'entre eux déclare la map, qui couvre toutes les méthodes du dossier :
+
+```go
+// api/users/users.go — déclare les permissions de TOUTE la route /api/users
+var Permissions = map[string]string{
+	"GET":  "user.read",  // exporté par users.go
+	"POST": "user.create", // exporté par test.go, même dossier
+}
+```
+
+Deux fichiers déclarant `Permissions` pour la même route refusent le démarrage.
 
 ```go
 // api/health/route.go — route publique
@@ -215,7 +225,7 @@ Error loading handlers: route permission validation failed (1 violation(s)):
 articles/route.go: Permissions: missing required symbol: var Permissions map[string]string
 ```
 
-Sont refusés au démarrage : symbole `Permissions` manquant, méthode exportée sans entrée dans la map, entrée sans handler exporté (faute de frappe), permission vide, et — si `WithKnownPermissions` est utilisé — toute permission inconnue. Un fichier `.go` sans aucun handler exporté n'a pas besoin de symbole.
+Sont refusés au démarrage : symbole `Permissions` manquant pour un dossier qui exporte des handlers, déclaration dans **plusieurs** fichiers du même dossier, méthode exportée sans entrée dans la map, entrée sans handler exporté (faute de frappe), permission vide, et — si `WithKnownPermissions` est utilisé — toute permission inconnue. Un dossier sans aucun handler exporté n'a pas besoin de symbole.
 
 ## Restrictions ABAC dans les handlers
 

@@ -36,3 +36,11 @@ func (g Grants) HasPermission(action Action) bool {
 type GrantProvider interface {
 	Resolve(ctx context.Context, subject Subject, scope Scope) (Grants, error)
 }
+
+// PermissionSyncer is optionally implemented by providers able to register
+// the permissions the application declares (route Permissions maps,
+// WithKnownPermissions), so that no permission row is ever inserted by hand.
+// Synchronization is additive only: it never deletes anything (AUTHZ-512).
+type PermissionSyncer interface {
+	SyncPermissions(ctx context.Context, permissions []Action) error
+}

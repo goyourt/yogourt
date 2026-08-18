@@ -1,6 +1,7 @@
 package routing
 
 import (
+	"context"
 	"log"
 	"net"
 	"os"
@@ -73,8 +74,19 @@ func Initialize(apiFolder string, options ...Option) {
 		log.Fatal("Error loading middlewares: ", err)
 	}
 
-	if err := loadAPIHandlers(r, apiFolder, cfg.authorizer); err != nil {
+	declared, err := loadAPIHandlers(r, apiFolder, cfg.authorizer)
+	if err != nil {
 		log.Fatal("Error loading handlers: ", err)
+	}
+
+	if cfg.authorizer != nil {
+		// Every permission declared by the routes (plus the known list) is
+		// registered with the provider: applications never insert permission
+		// rows by hand. Additive only, fail-fast on a store failure.
+		perms := append(declared, cfg.authorizer.KnownPermissions()...)
+		if err := cfg.authorizer.SyncPermissions(context.Background(), perms); err != nil {
+			log.Fatal("Error syncing permissions: ", err)
+		}
 	}
 
 	serverConfig := mainConfig.Server
