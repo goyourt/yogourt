@@ -1,6 +1,7 @@
 package database
 
 import (
+	"errors"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -35,11 +36,13 @@ func GetAllPaginated[T interfaces.BaseInterface](objs *[]T, values map[string]an
 	SearchQuery(values, objs, page, pageSize).Distinct().Find(objs)
 }
 
-func GetOneBy(obj interfaces.BaseInterface, values map[string]any) {
+// GetOneBy loads the first record matching values into obj. It returns
+// GORM's error, including gorm.ErrRecordNotFound when nothing matches.
+func GetOneBy(obj interfaces.BaseInterface, values map[string]any) error {
 	if obj.GetID() == 0 {
 		resetId(obj)
 	}
-	JoinTables(values, &obj).First(obj)
+	return JoinTables(values, &obj).First(obj).Error
 }
 
 func (dw DataWriter) Create(obj interfaces.BaseInterface) error {
@@ -61,7 +64,9 @@ func (dw DataWriter) Update(obj interfaces.BaseInterface) error {
 }
 
 func (dw DataWriter) Upsert(obj interfaces.BaseInterface, values map[string]any) error {
-	GetOneBy(obj, values)
+	if err := GetOneBy(obj, values); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
 
 	if obj.GetID() == 0 {
 		return dw.Create(obj)

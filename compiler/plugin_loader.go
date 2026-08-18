@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"errors"
 	"fmt"
 	"plugin"
 	"reflect"
@@ -11,6 +12,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/goyourt/yogourt/core"
 )
+
+// ErrSymbolNotFound wraps every symbol lookup failure. Callers treating a
+// symbol as optional can detect it with errors.Is; any other LoadSymbol error
+// means the symbol exists but does not have the expected type.
+var ErrSymbolNotFound = errors.New("plugin symbol not found")
 
 func LoadRoutes(soPath string) (map[string]gin.HandlerFunc, error) {
 	plg, err := plugin.Open(soPath)
@@ -196,16 +202,34 @@ func setParamValue(field reflect.Value, value string, name string) error {
 	return nil
 }
 
+// symbolLookuper is the minimal surface LoadSymbol needs from a plugin.
+// *plugin.Plugin satisfies it; tests can supply a fake to exercise
+// LoadSymbolFrom without opening a real .so file.
+type symbolLookuper interface {
+	Lookup(symbol string) (plugin.Symbol, error)
+}
+
 func LoadSymbol[T any](soPath, symbol string) (*T, error) {
 	plg, err := plugin.Open(soPath)
 	if err != nil {
 		return nil, err
 	}
 
-	sym, err := plg.Lookup(symbol)
+	return LoadSymbolFrom[T](plg, symbol)
+}
+
+// LoadSymbolFrom looks up symbol via looker and asserts it has type *T,
+// returning a descriptive error instead of panicking when it doesn't.
+func LoadSymbolFrom[T any](looker symbolLookuper, symbol string) (*T, error) {
+	sym, err := looker.Lookup(symbol)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrSymbolNotFound, err)
 	}
 
-	return sym.(*T), nil
+	value, ok := sym.(*T)
+	if !ok {
+		return nil, fmt.Errorf("plugin symbol %q: expected type %T, got %T", symbol, value, sym)
+	}
+
+	return value, nil
 }
