@@ -16,36 +16,37 @@ import (
 	"github.com/goyourt/yogourt/middleware"
 )
 
+// loadedRouteFile is the result of loading one route plugin: its handlers
+// and its optional Permissions declaration.
+type loadedRouteFile struct {
+	file        string
+	routePath   string
+	routes      map[string]gin.HandlerFunc
+	permissions map[string]string
+	hasSymbol   bool
+	symErr      error
+}
+
 // loadAPIHandlers loads every route plugin under basePath and registers its
 // handlers. engine is nil when no authorizer is configured (D1); otherwise
-// every route file must declare its permissions and the RBAC middleware is
-// inserted in front of each non-public handler. All loading errors and all
-// permission violations are collected before failing, so a boot failure
-// reports every problem at once (D2).
-func loadAPIHandlers(r *gin.Engine, basePath string, engine *authorization.Engine) error {
+// each route folder must declare its permissions in exactly one of its files
+// and the RBAC middleware is inserted in front of each non-public handler.
+// All loading errors and all permission violations are collected before
+// failing, so a boot failure reports every problem at once (D2). It returns
+// the deduplicated set of permissions declared by the routes, for the boot
+// synchronization with the grant provider.
+func loadAPIHandlers(r *gin.Engine, basePath string, engine *authorization.Engine) ([]authorization.Action, error) {
 	files, err := walkGoFiles(basePath)
 	if err != nil {
-		return err
-	}
-
-	type routeTask struct {
-		protocol  string
-		routePath string
-		handlers  []gin.HandlerFunc
+		return nil, err
 	}
 
 	var (
-		wg         sync.WaitGroup
-		mu         sync.Mutex
-		loadErrs   []error
-		violations []routeViolation
-		tasks      []routeTask
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		loadErrs []error
+		loaded   []loadedRouteFile
 	)
-
-	var known []authorization.Action
-	if engine != nil {
-		known = engine.KnownPermissions()
-	}
 
 	// semaphore to limit concurrent plugin loading
 	sem := make(chan struct{}, runtime.NumCPU())
@@ -68,8 +69,6 @@ func loadAPIHandlers(r *gin.Engine, basePath string, engine *authorization.Engin
 				return
 			}
 
-			rp := routePathFor(basePath, f)
-
 			routes, lerr := compiler.LoadRoutes(so)
 			if lerr != nil {
 				mu.Lock()
@@ -78,47 +77,60 @@ func loadAPIHandlers(r *gin.Engine, basePath string, engine *authorization.Engin
 				return
 			}
 
-			reportPath := reportFilePath(basePath, f)
 			permissions, hasSymbol, symErr := loadRoutePermissions(so)
 
-			if engine == nil {
-				// D1: without an authorizer a Permissions symbol is ignored.
-				if hasSymbol {
-					log.Printf("warning: %s exports a Permissions symbol but no authorizer is configured; the symbol is ignored", reportPath)
-				}
-			} else {
-				fileViolations := []routeViolation{}
-				if symErr != nil {
-					fileViolations = append(fileViolations, routeViolation{
-						File:    reportPath,
-						Method:  "Permissions",
-						Problem: symErr.Error(),
-					})
-				} else {
-					fileViolations = validateRoutePermissions(reportPath, permissions, hasSymbol, methodsOf(routes), known)
-				}
-				if len(fileViolations) > 0 {
-					mu.Lock()
-					violations = append(violations, fileViolations...)
-					mu.Unlock()
-					return
-				}
-			}
-
-			baseMw := middleware.GetMiddleware(rp)
-			for m, h := range routes {
-				mu.Lock()
-				tasks = append(tasks, routeTask{
-					protocol:  m,
-					routePath: rp,
-					handlers:  routeHandlerChain(engine, permissions[m], baseMw, h),
-				})
-				mu.Unlock()
-			}
+			mu.Lock()
+			loaded = append(loaded, loadedRouteFile{
+				file:        reportFilePath(basePath, f),
+				routePath:   routePathFor(basePath, f),
+				routes:      routes,
+				permissions: permissions,
+				hasSymbol:   hasSymbol,
+				symErr:      symErr,
+			})
+			mu.Unlock()
 		}()
 	}
 
 	wg.Wait()
+
+	// The URL is derived from the folder: several files may serve the same
+	// route, so declarations are validated per route, not per file.
+	groups := make(map[string][]loadedRouteFile)
+	for _, lf := range loaded {
+		groups[lf.routePath] = append(groups[lf.routePath], lf)
+	}
+
+	var violations []routeViolation
+	if engine == nil {
+		// D1: without an authorizer a Permissions symbol is ignored.
+		for _, lf := range loaded {
+			if lf.hasSymbol {
+				log.Printf("warning: %s exports a Permissions symbol but no authorizer is configured; the symbol is ignored", lf.file)
+			}
+		}
+	} else {
+		known := engine.KnownPermissions()
+		for routePath, groupFiles := range groups {
+			groupRouteFiles := make([]routeFile, 0, len(groupFiles))
+			for _, lf := range groupFiles {
+				if lf.symErr != nil {
+					violations = append(violations, routeViolation{
+						File:    lf.file,
+						Method:  "Permissions",
+						Problem: lf.symErr.Error(),
+					})
+				}
+				groupRouteFiles = append(groupRouteFiles, routeFile{
+					file:        lf.file,
+					methods:     methodsOf(lf.routes),
+					permissions: lf.permissions,
+					hasSymbol:   lf.hasSymbol && lf.symErr == nil,
+				})
+			}
+			violations = append(violations, validateRoutePermissionGroup(routePath, groupRouteFiles, known)...)
+		}
+	}
 
 	// One single exhaustive boot report (D2): plugin loading errors and
 	// permission violations are joined so no category masks the other.
@@ -126,14 +138,42 @@ func loadAPIHandlers(r *gin.Engine, basePath string, engine *authorization.Engin
 		loadErrs = append(loadErrs, errors.New(permissionReport(violations)))
 	}
 	if len(loadErrs) > 0 {
-		return errors.Join(loadErrs...)
+		return nil, errors.Join(loadErrs...)
 	}
 
-	for _, t := range tasks {
-		r.Handle(t.protocol, t.routePath, t.handlers...)
+	declared := make(map[authorization.Action]bool)
+	for routePath, groupFiles := range groups {
+		// After validation, at most one file of the group declares the route
+		// permissions; its map covers every method of the folder.
+		var permissions map[string]string
+		if engine != nil {
+			for _, lf := range groupFiles {
+				if lf.hasSymbol && lf.symErr == nil {
+					permissions = lf.permissions
+					break
+				}
+			}
+			for _, permission := range permissions {
+				if permission != authorization.Public && permission != "" {
+					declared[authorization.Action(permission)] = true
+				}
+			}
+		}
+
+		baseMw := middleware.GetMiddleware(routePath)
+		for _, lf := range groupFiles {
+			for m, h := range lf.routes {
+				r.Handle(m, routePath, routeHandlerChain(engine, permissions[m], baseMw, h)...)
+			}
+		}
 	}
 
-	return nil
+	declaredList := make([]authorization.Action, 0, len(declared))
+	for permission := range declared {
+		declaredList = append(declaredList, permission)
+	}
+
+	return declaredList, nil
 }
 
 // routeHandlerChain assembles the final handler chain for one route method:

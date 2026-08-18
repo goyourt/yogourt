@@ -114,6 +114,22 @@ func (e *Engine) Decide(ctx context.Context, request Request) Decision {
 	return Decision{Allowed: true, Reason: ReasonAllowed}
 }
 
+// SyncPermissions registers the given permissions with the provider when it
+// supports synchronization (PermissionSyncer); otherwise it is a no-op. The
+// framework calls it at boot with every permission declared by the routes,
+// so applications never insert permission rows by hand.
+func (e *Engine) SyncPermissions(ctx context.Context, permissions []Action) error {
+	if e.provider == nil || len(permissions) == 0 {
+		return nil
+	}
+	syncer, ok := e.provider.(PermissionSyncer)
+	if !ok {
+		return nil
+	}
+
+	return syncer.SyncPermissions(ctx, permissions)
+}
+
 // HasPermission answers the RBAC question alone, without evaluating
 // restrictions. It reports false without error for an anonymous subject.
 func (e *Engine) HasPermission(ctx context.Context, subject Subject, scope Scope, action Action) (bool, error) {
