@@ -36,6 +36,8 @@ Tous les exemples de cette page forment une application complète qui a été co
 
 ### 2. Construire et activer le moteur
 
+Le démarrage rapide utilise le provider mémoire ; pour la production, voir [Store PostgreSQL](#store-postgresql).
+
 ```go
 // main.go
 package main
@@ -334,6 +336,31 @@ Sans appel à `WithScope`, tout se résout dans `ScopeGlobal` — une applicatio
 > [!WARNING]
 > Ne construisez jamais un scope à partir d'une entrée utilisateur brute. La valeur sentinelle de `ScopeGlobal` (`@global`) est hors d'atteinte des identifiants habituels, mais la validation des noms de tenants reste la responsabilité de l'application.
 
+## Store PostgreSQL
+
+`authorization/gormstore` fournit le provider SQL de production. Les tables (`authz_permissions`, `authz_roles`, `authz_role_permissions`, `authz_role_bindings`) sont créées par une migration SQL versionnée, embarquée dans le package et appliquée **explicitement** — jamais d'`AutoMigrate` :
+
+```go
+db := providers.GetDB() // ou toute connexion GORM
+if err := gormstore.Migrate(ctx, db); err != nil {
+	log.Fatal(err)
+}
+store := gormstore.New(db)
+
+engine := authorization.NewEngine(authorization.WithProvider(store))
+routing.Initialize("api", routing.WithAuthorizer(engine))
+```
+
+**Aucune permission ne s'insère à la main.** Au démarrage, le framework enregistre automatiquement dans le store toutes les permissions déclarées par les routes (synchronisation additive : rien n'est jamais supprimé), et `GrantPermissions` enregistre de lui-même une permission encore inconnue. Il ne reste à administrer que les rôles et les bindings :
+
+```go
+store.CreateRole(ctx, "editor") // idempotent
+store.GrantPermissions(ctx, "editor", "article.read", "article.update")
+store.BindRoles(ctx, aliceID, authorization.ScopeGlobal, "editor")
+```
+
+La résolution des grants tient en une seule requête indexée par `(sujet, scope)`. Toutes les opérations acceptent un `context.Context`, sont transactionnelles, idempotentes, et retournent leurs erreurs SQL. Les tests d'intégration du package se lancent avec `YOGOURT_TEST_DSN` (ils sont ignorés sinon).
+
 ## Intégration avec l'authentification
 
 Après un `services.Authenticate` réussi, le sujet est attaché automatiquement : identité = claim `uuid` du JWT, avec l'ID SQL interne dans `Attributes["internal_id"]`. Un modèle utilisateur peut contrôler son propre sujet en implémentant :
@@ -350,7 +377,6 @@ Le Lot 0 du chantier a durci cette chaîne : algorithme JWT restreint à HS256, 
 
 ## Limites actuelles
 
-- seul le provider **mémoire** est fourni ; le store PostgreSQL/GORM est prévu dans un lot ultérieur ;
 - pas de commande CLI `yogourt routes` ni `permissions sync` ;
 - pas de cache des grants entre requêtes : un `Resolve` (deux si scope ≠ global) par contrôle ;
 - l'ADR consolidant les décisions de conception reste à rédiger ;
