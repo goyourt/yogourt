@@ -17,7 +17,7 @@ func TestConfigReader(t *testing.T) {
 	if cfg.AppName != "test-app" {
 		t.Errorf("App name not found")
 	}
-	if cfg.Security.SecretKey != "secret_key" {
+	if cfg.Security.SecretKey != "secret_key_at_least_32_bytes_long!!" {
 		t.Errorf("Security config not found")
 	}
 	if len(cfg.EnvFiles) != 1 || cfg.EnvFiles[0] != "./configs/yogourt.env" {

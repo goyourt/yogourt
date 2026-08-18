@@ -1,12 +1,14 @@
 package routing
 
 import (
+	"errors"
 	"net/http"
 	"reflect"
 
 	"github.com/gin-gonic/gin"
 	"github.com/goyourt/yogourt/interfaces"
 	"github.com/goyourt/yogourt/services/database"
+	"gorm.io/gorm"
 )
 
 func HandleRequest(c *gin.Context, req any) bool {
@@ -31,8 +33,8 @@ func HandleRequest(c *gin.Context, req any) bool {
 		// simple case : BaseInterface
 		if (f.Kind() == reflect.Interface || f.Kind() == reflect.Ptr) && !f.IsNil() {
 			if obj, valid := f.Interface().(interfaces.BaseInterface); valid && obj != nil {
-				if obj.GetUuid() != "" {
-					database.GetOneBy(obj, map[string]any{"uuid": obj.GetUuid()})
+				if obj.GetUuid() != "" && !hydrateRelation(c, obj) {
+					return false
 				}
 			}
 		}
@@ -48,14 +50,30 @@ func HandleRequest(c *gin.Context, req any) bool {
 					continue
 				}
 				if obj, valid := elem.Interface().(interfaces.BaseInterface); valid && obj != nil {
-					if obj.GetUuid() != "" {
-						database.GetOneBy(obj, map[string]any{"uuid": obj.GetUuid()})
+					if obj.GetUuid() != "" && !hydrateRelation(c, obj) {
+						return false
 					}
 				}
 			}
 		}
 	}
 
+	return true
+}
+
+// hydrateRelation loads obj by its uuid. An unknown uuid leaves the object
+// unhydrated and lets the handler run, exactly as before v2 (D1) — a 422 here
+// would also give anonymous callers an existence oracle on any referenced
+// table, defeating the 404 masking of D8. Only a technical database failure
+// aborts the request.
+func hydrateRelation(c *gin.Context, obj interfaces.BaseInterface) bool {
+	if err := database.GetOneBy(obj, map[string]any{"uuid": obj.GetUuid()}); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return true
+		}
+		RespondServiceUnavailable(c)
+		return false
+	}
 	return true
 }
 
@@ -84,4 +102,8 @@ func RespondWithContent(c *gin.Context, status int, key string, content any) {
 
 func RespondNotFound(c *gin.Context) {
 	RespondAndAbort(c, http.StatusNotFound, "Resource not found")
+}
+
+func RespondServiceUnavailable(c *gin.Context) {
+	RespondAndAbort(c, http.StatusServiceUnavailable, "Service temporarily unavailable")
 }
