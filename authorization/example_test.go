@@ -44,9 +44,9 @@ func ownsArticle(_ context.Context, input authorization.PolicyInput) (bool, erro
 // an editor update their own articles.
 func ExampleRestriction() {
 	provider := memory.NewProvider()
-	_ = provider.CreateRole("editor")
-	_ = provider.GrantPermissions("editor", "article.update")
-	_ = provider.BindRoles("6f1b0c1e-4a94-4f6f-9d3a-1c2b3d4e5f60", authorization.ScopeGlobal, "editor")
+	_ = provider.CreateRole(context.Background(), "editor")
+	_ = provider.GrantPermissions(context.Background(), "editor", "article.update")
+	_ = provider.BindRoles(context.Background(), "6f1b0c1e-4a94-4f6f-9d3a-1c2b3d4e5f60", authorization.ScopeGlobal, "editor")
 
 	engine := authorization.NewEngine(
 		authorization.WithProvider(provider),
@@ -69,7 +69,7 @@ func ExampleRestriction() {
 	fmt.Printf("owner: allowed=%v reason=%s\n", decision.Allowed, decision.Reason)
 
 	// Same role and permission, but not the author of the article.
-	_ = provider.BindRoles("0a9b8c7d-6e5f-4a3b-2c1d-0e9f8a7b6c5d", authorization.ScopeGlobal, "editor")
+	_ = provider.BindRoles(context.Background(), "0a9b8c7d-6e5f-4a3b-2c1d-0e9f8a7b6c5d", authorization.ScopeGlobal, "editor")
 	other := authorization.Subject{
 		ID:         "0a9b8c7d-6e5f-4a3b-2c1d-0e9f8a7b6c5d",
 		Attributes: map[string]any{"internal_id": 99},
@@ -132,16 +132,16 @@ func ExampleRestriction_publicOrOwnerOrEscalation() {
 	)
 
 	provider := memory.NewProvider()
-	_ = provider.CreateRole("member")
-	_ = provider.GrantPermissions("member", "profiles.read")
-	_ = provider.CreateRole("moderator")
+	_ = provider.CreateRole(context.Background(), "member")
+	_ = provider.GrantPermissions(context.Background(), "member", "profiles.read")
+	_ = provider.CreateRole(context.Background(), "moderator")
 	// The escalation is a permission of its own, granted and revoked like any
 	// other, and visible in an audit of the role.
-	_ = provider.GrantPermissions("moderator", "profiles.read", "profiles.read_private")
+	_ = provider.GrantPermissions(context.Background(), "moderator", "profiles.read", "profiles.read_private")
 
-	_ = provider.BindRoles(ownerID, authorization.ScopeGlobal, "member")
-	_ = provider.BindRoles(moderatorID, authorization.ScopeGlobal, "moderator")
-	_ = provider.BindRoles(strangerID, authorization.ScopeGlobal, "member")
+	_ = provider.BindRoles(context.Background(), ownerID, authorization.ScopeGlobal, "member")
+	_ = provider.BindRoles(context.Background(), moderatorID, authorization.ScopeGlobal, "moderator")
+	_ = provider.BindRoles(context.Background(), strangerID, authorization.ScopeGlobal, "member")
 
 	engine := authorization.NewEngine(
 		authorization.WithProvider(provider),

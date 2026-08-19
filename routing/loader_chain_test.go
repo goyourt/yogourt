@@ -1,6 +1,7 @@
 package routing
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -34,13 +35,13 @@ func grantedEngine(t *testing.T, subjectID string, action authorization.Action) 
 	t.Helper()
 
 	provider := memory.NewProvider()
-	if err := provider.CreateRole("reader"); err != nil {
+	if err := provider.CreateRole(context.Background(), "reader"); err != nil {
 		t.Fatal(err)
 	}
-	if err := provider.GrantPermissions("reader", action); err != nil {
+	if err := provider.GrantPermissions(context.Background(), "reader", action); err != nil {
 		t.Fatal(err)
 	}
-	if err := provider.BindRoles(subjectID, authorization.ScopeGlobal, "reader"); err != nil {
+	if err := provider.BindRoles(context.Background(), subjectID, authorization.ScopeGlobal, "reader"); err != nil {
 		t.Fatal(err)
 	}
 
