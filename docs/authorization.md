@@ -57,17 +57,20 @@ const (
 )
 
 func main() {
-	// Provider de grants en mémoire (voir plus bas pour le store SQL).
+	ctx := context.Background()
+
+	// Provider de grants en mémoire (voir plus bas pour le store SQL, et
+	// pour la gestion des rôles à l'exécution depuis une interface web).
 	// Les noms de permissions suivent la convention : dossier + verbe.
 	provider := memory.NewProvider()
-	must(provider.CreateRole("reader"))
-	must(provider.GrantPermissions("reader", "articles.read"))
-	must(provider.CreateRole("editor"))
-	must(provider.GrantPermissions("editor", "articles.read", "articles.create", "articles.update"))
+	must(provider.CreateRole(ctx, "reader"))
+	must(provider.GrantPermissions(ctx, "reader", "articles.read"))
+	must(provider.CreateRole(ctx, "editor"))
+	must(provider.GrantPermissions(ctx, "editor", "articles.read", "articles.create", "articles.update"))
 
 	// Bindings sujet + scope → rôles. Sans multi-tenant, tout vit dans ScopeGlobal.
-	must(provider.BindRoles(aliceID, authorization.ScopeGlobal, "editor"))
-	must(provider.BindRoles(bobID, authorization.ScopeGlobal, "reader"))
+	must(provider.BindRoles(ctx, aliceID, authorization.ScopeGlobal, "editor"))
+	must(provider.BindRoles(ctx, bobID, authorization.ScopeGlobal, "reader"))
 
 	// Le moteur est construit une fois, avec toutes ses options, puis gelé.
 	engine := authorization.NewEngine(
@@ -382,7 +385,7 @@ engine := authorization.NewEngine(
 `in.Grants` contient les grants RBAC que le moteur vient de résoudre pour ce sujet (union `{scope, ScopeGlobal}`) — aucune requête supplémentaire. Le rôle `moderator` reçoit simplement la permission d'escalade :
 
 ```go
-must(provider.GrantPermissions("moderator", "profiles.read", "profiles.read_private"))
+must(provider.GrantPermissions(ctx, "moderator", "profiles.read", "profiles.read_private"))
 ```
 
 > [!WARNING]
@@ -465,7 +468,7 @@ Un scope est un identifiant opaque (tenant, organisation). La résolution des gr
 
 ```go
 // Binding limité à un tenant :
-provider.BindRoles(userID, "tenant-42", "editor")
+provider.BindRoles(ctx, userID, "tenant-42", "editor")
 
 // Fixer le scope de la requête (par ex. dans un middleware) :
 c.Request = c.Request.WithContext(authorization.WithScope(c.Request.Context(), "tenant-42"))
@@ -491,15 +494,89 @@ engine := authorization.NewEngine(authorization.WithProvider(store))
 routing.Initialize("api", routing.WithAuthorizer(engine))
 ```
 
-**Aucune permission ne s'insère à la main.** Au démarrage, le framework enregistre automatiquement dans le store toutes les permissions déclarées par les routes (synchronisation additive : rien n'est jamais supprimé), et `GrantPermissions` enregistre de lui-même une permission encore inconnue. Il ne reste à administrer que les rôles et les bindings :
+**Aucune permission ne s'insère à la main.** Au démarrage, le framework enregistre automatiquement dans le store toutes les permissions déclarées par les routes (synchronisation additive : rien n'est jamais supprimé), et `GrantPermissions` enregistre de lui-même une permission encore inconnue. Il ne reste à administrer que les rôles et les bindings — à l'exécution, y compris depuis une interface web (voir [Administrer les rôles](#administrer-les-rôles-depuis-une-interface-web)) :
 
 ```go
 store.CreateRole(ctx, "editor") // idempotent
-store.GrantPermissions(ctx, "editor", "article.read", "article.update")
+store.GrantPermissions(ctx, "editor", "articles.read", "articles.update")
 store.BindRoles(ctx, aliceID, authorization.ScopeGlobal, "editor")
 ```
 
 La résolution des grants tient en une seule requête indexée par `(sujet, scope)`. Toutes les opérations acceptent un `context.Context`, sont transactionnelles, idempotentes, et retournent leurs erreurs SQL. Les tests d'intégration du package se lancent avec `YOGOURT_TEST_DSN` (ils sont ignorés sinon).
+
+## Administrer les rôles depuis une interface web
+
+Rien n'est figé dans le code : rôles, permissions accordées et attributions se gèrent **à l'exécution**. Les deux providers implémentent `authorization.GrantAdmin`, qui ajoute aux mutations les lectures nécessaires à une interface d'administration :
+
+| Méthode | Usage dans une UI |
+| --- | --- |
+| `Permissions(ctx)` | la **liste fermée** dans laquelle choisir — alimentée automatiquement au boot par les permissions dérivées des routes |
+| `Roles(ctx)` | l'écran des rôles |
+| `RolePermissions(ctx, role)` | ce qu'un rôle accorde |
+| `Bindings(ctx, subjectID)` | les rôles d'un utilisateur, tous scopes |
+| `RoleBindings(ctx, role)` | qui détient un rôle |
+| `CreateRole` / `DeleteRole` | gestion des rôles |
+| `GrantPermissions` / `RevokePermissions` | composition d'un rôle |
+| `BindRoles` / `UnbindRoles` | attribution à un utilisateur, par scope |
+
+Une route d'admin n'a rien à recevoir du `main.go` : elle reconstruit le store depuis le provider de base de données du framework.
+
+```go
+// api/admin/roles/route.go — GET dérive roles.read, POST dérive roles.create
+func GET(c *gin.Context) {
+	store := gormstore.New(providers.GetDB())
+
+	roles, err := store.Roles(c.Request.Context())
+	if err != nil {
+		routing.RespondServiceUnavailable(c)
+		return
+	}
+
+	routing.RespondSuccess(c, roles)
+}
+```
+
+Les routes d'administration sont elles-mêmes protégées par leurs permissions dérivées (`roles.read`, `roles.create`…). Quand le verbe HTTP ne décrit pas l'action métier, une surcharge partielle suffit :
+
+```go
+// api/admin/users/userId_/roles/route.go
+// Attribuer un rôle n'est pas « créer un rôle » ; GET garde sa dérivation.
+var Permissions = map[string]string{
+	"POST":   "roles.assign",
+	"DELETE": "roles.unassign",
+}
+```
+
+### Le premier administrateur
+
+Au tout premier démarrage, personne ne détient les permissions d'administration — donc personne ne peut en accorder. Il faut un amorçage explicite, idempotent, déclenché par une variable d'environnement :
+
+```go
+if subject := os.Getenv("ADMIN_SUBJECT"); subject != "" {
+	store.CreateRole(ctx, "admin")
+	store.GrantPermissions(ctx, "admin", "roles.read", "roles.create", "roles.assign", /* ... */)
+	store.BindRoles(ctx, subject, authorization.ScopeGlobal, "admin")
+}
+```
+
+Le rôle `admin` ne porte que des permissions **explicites** : le framework n'accorde aucun privilège à un rôle en fonction de son nom.
+
+### Effet immédiat
+
+Les grants sont résolus à chaque requête : une attribution ou une révocation prend effet **dès la requête suivante**, sans redémarrage. Cycle vérifié de bout en bout :
+
+```sh
+# L'admin crée un rôle, lui accorde une permission, l'attribue à un utilisateur
+curl -X POST -H "$ADMIN" -d '{"role":"reader"}'                localhost:8080/api/admin/roles
+curl -X POST -H "$ADMIN" -d '{"permissions":["users.read"]}'   localhost:8080/api/admin/roles/reader/permissions
+curl -X POST -H "$ADMIN" -d '{"roles":["reader"]}'             localhost:8080/api/admin/users/$USER/roles
+
+curl -H "$USER_HEADER" localhost:8080/api/users   # 403 avant, 200 après — sans redémarrage
+
+# Révocation
+curl -X DELETE -H "$ADMIN" -d '{"roles":["reader"]}' localhost:8080/api/admin/users/$USER/roles
+curl -H "$USER_HEADER" localhost:8080/api/users   # 403 de nouveau
+```
 
 ## Intégration avec l'authentification
 
@@ -518,6 +595,7 @@ Le Lot 0 du chantier a durci cette chaîne : algorithme JWT restreint à HS256, 
 ## Limites actuelles
 
 - renommer un dossier change la permission dérivée : l'ancienne reste en base (synchronisation additive) et les bindings qui la référencent deviennent inopérants — à traiter comme une migration de données (Django a le même travers) ;
+- aucune interface d'administration n'est livrée : le framework fournit le contrat `GrantAdmin` et les routes sont à écrire côté application (voir ci-dessus) ;
 - pas de commande CLI `yogourt routes` ni `permissions sync` ;
 - pas de cache des grants entre requêtes : un `Resolve` (deux si scope ≠ global) par contrôle ;
 - l'ADR consolidant les décisions de conception reste à rédiger ;
