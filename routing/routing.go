@@ -2,11 +2,13 @@ package routing
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -16,7 +18,12 @@ import (
 	"github.com/goyourt/yogourt/services/providers"
 )
 
-const defaultHost = "0.0.0.0"
+const (
+	defaultHost = "0.0.0.0"
+	// productionMode is the config mode where a weak JWT secret is fatal
+	// rather than merely reported.
+	productionMode = "production"
+)
 
 // config holds the settings applied by the functional options of Initialize.
 type config struct {
@@ -65,7 +72,7 @@ func Initialize(apiFolder string, options ...Option) {
 	r := gin.Default()
 
 	mainConfig := providers.GetMainConfig()
-	validateSecretKeyAtBoot(mainConfig.Security.SecretKey)
+	validateSecretKeyAtBoot(mainConfig.Security.SecretKey, mainConfig.Mode)
 	r.Use(cors.New(buildCORSConfig(mainConfig)))
 
 	r.OPTIONS("/*path", func(c *gin.Context) {
@@ -97,20 +104,31 @@ func Initialize(apiFolder string, options ...Option) {
 	}
 }
 
-// validateSecretKeyAtBoot fails fast on a misconfigured JWT secret instead of
-// letting every token operation fail at request time (AUTHZ-012). An empty
-// secret only logs a warning: applications that do not use the token service
-// must keep booting. The length rule is kept in sync with
-// services.ValidateSecretKey (routing cannot import services — import cycle).
-func validateSecretKeyAtBoot(secret string) {
+// validateSecretKeyAtBoot surfaces a misconfigured JWT secret at startup
+// instead of letting every token operation fail at request time (AUTHZ-012).
+// Outside production the problem is only logged: a development or test
+// application must keep booting with a throwaway secret, and many do not use
+// the token service at all. In production a short secret is fatal — it is the
+// one place where booting with a guessable signing key is worse than not
+// booting. The length rule is kept in sync with services.ValidateSecretKey
+// (routing cannot import services — import cycle).
+func validateSecretKeyAtBoot(secret, mode string) {
 	const minSecretKeyLength = 32
-	if secret == "" {
-		log.Printf("warning: security.secret_key is empty; JWT features are unusable until it is configured")
+
+	problem := ""
+	switch {
+	case secret == "":
+		problem = "security.secret_key is empty"
+	case len(secret) < minSecretKeyLength:
+		problem = fmt.Sprintf("security.secret_key is too short (%d bytes, minimum %d)", len(secret), minSecretKeyLength)
+	default:
 		return
 	}
-	if len(secret) < minSecretKeyLength {
-		log.Fatalf("security.secret_key is too short (%d bytes): it must be at least %d bytes", len(secret), minSecretKeyLength)
+
+	if strings.EqualFold(mode, productionMode) {
+		log.Fatalf("%s: refusing to start in production mode", problem)
 	}
+	log.Printf("warning: %s; JWT features stay unusable until it is fixed, and production mode would refuse to start", problem)
 }
 
 func buildCORSConfig(mainConfig *providers.MainConfig) cors.Config {
