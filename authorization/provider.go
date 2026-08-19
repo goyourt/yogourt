@@ -30,6 +30,18 @@ func (g Grants) HasPermission(action Action) bool {
 	return false
 }
 
+// clone returns a copy of the grants with independent slices, so that a
+// caller receiving it — a Restriction through PolicyInput — cannot mutate the
+// grants the engine holds. It matters because grant resolution is meant to be
+// memoized per request: a restriction appending to or reordering the slices it
+// receives would otherwise poison every later decision of the same request.
+func (g Grants) clone() Grants {
+	return Grants{
+		Roles:       append([]string(nil), g.Roles...),
+		Permissions: append([]Action(nil), g.Permissions...),
+	}
+}
+
 // GrantProvider resolves the grants of a subject for a single scope. The
 // engine is responsible for the union with ScopeGlobal; providers must only
 // return grants bound to the exact scope they are asked about.
