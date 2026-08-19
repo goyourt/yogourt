@@ -84,13 +84,13 @@ func TestContextAuthorization(t *testing.T) {
 	})
 
 	provider := memory.NewProvider()
-	if err := provider.CreateRole("editor"); err != nil {
+	if err := provider.CreateRole(context.Background(), "editor"); err != nil {
 		t.Fatal(err)
 	}
-	if err := provider.GrantPermissions("editor", "article.read", "article.denied", "article.broken"); err != nil {
+	if err := provider.GrantPermissions(context.Background(), "editor", "article.read", "article.denied", "article.broken"); err != nil {
 		t.Fatal(err)
 	}
-	if err := provider.BindRoles("subject-1", authorization.ScopeGlobal, "editor"); err != nil {
+	if err := provider.BindRoles(context.Background(), "subject-1", authorization.ScopeGlobal, "editor"); err != nil {
 		t.Fatal(err)
 	}
 	engine := authorization.NewEngine(

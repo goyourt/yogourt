@@ -320,6 +320,181 @@ func TestUnknownRoleErrors(t *testing.T) {
 	}
 }
 
+// seedAdminFixture creates the roles, permissions and bindings the
+// administration reads are exercised against: "empty" grants nothing, and the
+// bindings deliberately span two scopes and two subjects.
+func seedAdminFixture(t *testing.T, store *gormstore.Store) {
+	t.Helper()
+
+	ctx := context.Background()
+	for _, role := range []string{"viewer", "editor", "empty"} {
+		if err := store.CreateRole(ctx, role); err != nil {
+			t.Fatalf("create role %q: %v", role, err)
+		}
+	}
+	if err := store.GrantPermissions(ctx, "editor", "article.update", "article.read"); err != nil {
+		t.Fatalf("grant to editor: %v", err)
+	}
+	if err := store.GrantPermissions(ctx, "viewer", "article.read"); err != nil {
+		t.Fatalf("grant to viewer: %v", err)
+	}
+	if err := store.BindRoles(ctx, "user-1", "tenant-b", "viewer", "editor"); err != nil {
+		t.Fatalf("bind user-1 in tenant-b: %v", err)
+	}
+	if err := store.BindRoles(ctx, "user-1", "tenant-a", "editor"); err != nil {
+		t.Fatalf("bind user-1 in tenant-a: %v", err)
+	}
+	if err := store.BindRoles(ctx, "user-2", "tenant-a", "editor"); err != nil {
+		t.Fatalf("bind user-2 in tenant-a: %v", err)
+	}
+}
+
+func assertBindings(t *testing.T, got []authorization.Binding, want []authorization.Binding) {
+	t.Helper()
+
+	if len(got) != len(want) {
+		t.Fatalf("bindings = %+v, want %+v", got, want)
+	}
+	for i, binding := range want {
+		if got[i] != binding {
+			t.Fatalf("bindings = %+v, want %+v", got, want)
+		}
+	}
+}
+
+func TestRolesAndPermissionsAreListedSorted(t *testing.T) {
+	_, store := setup(t)
+	ctx := context.Background()
+
+	// Empty store: no row, no error.
+	if roles, err := store.Roles(ctx); err != nil || len(roles) != 0 {
+		t.Fatalf("Roles on empty store = %v, %v; want [], nil", roles, err)
+	}
+	if permissions, err := store.Permissions(ctx); err != nil || len(permissions) != 0 {
+		t.Fatalf("Permissions on empty store = %v, %v; want [], nil", permissions, err)
+	}
+
+	seedAdminFixture(t, store)
+
+	roles, err := store.Roles(ctx)
+	if err != nil {
+		t.Fatalf("Roles: %v", err)
+	}
+	// Sorted by name, and "empty" appears even though it grants nothing.
+	wantRoles := []string{"editor", "empty", "viewer"}
+	if len(roles) != len(wantRoles) {
+		t.Fatalf("Roles = %v, want %v", roles, wantRoles)
+	}
+	for i, role := range wantRoles {
+		if roles[i] != role {
+			t.Fatalf("Roles = %v, want %v (sorted by name)", roles, wantRoles)
+		}
+	}
+
+	permissions, err := store.Permissions(ctx)
+	if err != nil {
+		t.Fatalf("Permissions: %v", err)
+	}
+	// Sorted by name, not in registration order (article.update came first).
+	wantPermissions := []authorization.Action{"article.read", "article.update"}
+	if len(permissions) != len(wantPermissions) {
+		t.Fatalf("Permissions = %v, want %v", permissions, wantPermissions)
+	}
+	for i, permission := range wantPermissions {
+		if permissions[i] != permission {
+			t.Fatalf("Permissions = %v, want %v (sorted by name)", permissions, wantPermissions)
+		}
+	}
+}
+
+func TestRolePermissions(t *testing.T) {
+	_, store := setup(t)
+	ctx := context.Background()
+
+	seedAdminFixture(t, store)
+
+	permissions, err := store.RolePermissions(ctx, "editor")
+	if err != nil {
+		t.Fatalf("RolePermissions of editor: %v", err)
+	}
+	want := []authorization.Action{"article.read", "article.update"}
+	if len(permissions) != len(want) {
+		t.Fatalf("RolePermissions of editor = %v, want %v", permissions, want)
+	}
+	for i, permission := range want {
+		if permissions[i] != permission {
+			t.Fatalf("RolePermissions of editor = %v, want %v (sorted by name)", permissions, want)
+		}
+	}
+
+	// A role that grants nothing is not an error: it has an empty list.
+	if permissions, err = store.RolePermissions(ctx, "empty"); err != nil {
+		t.Fatalf("RolePermissions of empty: %v", err)
+	}
+	if len(permissions) != 0 {
+		t.Fatalf("RolePermissions of empty = %v, want []", permissions)
+	}
+
+	// An unknown role is an error, like for the mutations.
+	if _, err = store.RolePermissions(ctx, "ghost"); err == nil {
+		t.Error("RolePermissions on unknown role: want error, got nil")
+	}
+}
+
+func TestBindingsAreListedPerSubjectAndPerRole(t *testing.T) {
+	_, store := setup(t)
+	ctx := context.Background()
+
+	seedAdminFixture(t, store)
+
+	// Bindings spans every scope of the subject, sorted by (scope, role).
+	bindings, err := store.Bindings(ctx, "user-1")
+	if err != nil {
+		t.Fatalf("Bindings of user-1: %v", err)
+	}
+	assertBindings(t, bindings, []authorization.Binding{
+		{SubjectID: "user-1", Scope: "tenant-a", Role: "editor"},
+		{SubjectID: "user-1", Scope: "tenant-b", Role: "editor"},
+		{SubjectID: "user-1", Scope: "tenant-b", Role: "viewer"},
+	})
+
+	// Scopes and subjects stay isolated: user-2 only holds its own binding.
+	bindings, err = store.Bindings(ctx, "user-2")
+	if err != nil {
+		t.Fatalf("Bindings of user-2: %v", err)
+	}
+	assertBindings(t, bindings, []authorization.Binding{
+		{SubjectID: "user-2", Scope: "tenant-a", Role: "editor"},
+	})
+
+	// RoleBindings answers "who holds this role?", sorted by (subject, scope).
+	bindings, err = store.RoleBindings(ctx, "editor")
+	if err != nil {
+		t.Fatalf("RoleBindings of editor: %v", err)
+	}
+	assertBindings(t, bindings, []authorization.Binding{
+		{SubjectID: "user-1", Scope: "tenant-a", Role: "editor"},
+		{SubjectID: "user-1", Scope: "tenant-b", Role: "editor"},
+		{SubjectID: "user-2", Scope: "tenant-a", Role: "editor"},
+	})
+
+	bindings, err = store.RoleBindings(ctx, "viewer")
+	if err != nil {
+		t.Fatalf("RoleBindings of viewer: %v", err)
+	}
+	assertBindings(t, bindings, []authorization.Binding{
+		{SubjectID: "user-1", Scope: "tenant-b", Role: "viewer"},
+	})
+
+	// A role nobody holds, and a subject with no binding: empty, not an error.
+	if bindings, err = store.RoleBindings(ctx, "empty"); err != nil || len(bindings) != 0 {
+		t.Fatalf("RoleBindings of empty = %+v, %v; want [], nil", bindings, err)
+	}
+	if bindings, err = store.Bindings(ctx, "nobody"); err != nil || len(bindings) != 0 {
+		t.Fatalf("Bindings of nobody = %+v, %v; want [], nil", bindings, err)
+	}
+}
+
 func TestSQLErrorsAreReturned(t *testing.T) {
 	_, store := setup(t)
 	cancelled, cancel := context.WithCancel(context.Background())
@@ -348,6 +523,21 @@ func TestSQLErrorsAreReturned(t *testing.T) {
 	}
 	if _, err := store.Resolve(cancelled, authorization.Subject{ID: "user-1"}, "tenant-a"); err == nil {
 		t.Error("Resolve with cancelled context: want error, got nil")
+	}
+	if _, err := store.Roles(cancelled); err == nil {
+		t.Error("Roles with cancelled context: want error, got nil")
+	}
+	if _, err := store.Permissions(cancelled); err == nil {
+		t.Error("Permissions with cancelled context: want error, got nil")
+	}
+	if _, err := store.RolePermissions(cancelled, "editor"); err == nil {
+		t.Error("RolePermissions with cancelled context: want error, got nil")
+	}
+	if _, err := store.Bindings(cancelled, "user-1"); err == nil {
+		t.Error("Bindings with cancelled context: want error, got nil")
+	}
+	if _, err := store.RoleBindings(cancelled, "editor"); err == nil {
+		t.Error("RoleBindings with cancelled context: want error, got nil")
 	}
 	if err := gormstore.Migrate(cancelled, openDB(t)); err == nil {
 		t.Error("Migrate with cancelled context: want error, got nil")

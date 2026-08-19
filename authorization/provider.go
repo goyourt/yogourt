@@ -49,6 +49,44 @@ type GrantProvider interface {
 	Resolve(ctx context.Context, subject Subject, scope Scope) (Grants, error)
 }
 
+// Binding is one role binding: a subject holding a role within a scope.
+type Binding struct {
+	SubjectID string
+	Scope     Scope
+	Role      string
+}
+
+// GrantAdmin is optionally implemented by providers whose grants can be
+// administered at runtime — typically from an admin web interface. Mutations
+// are expected to be idempotent, and every read exists so a UI can be built
+// without reaching into the store's schema: list the roles, list the
+// permissions the framework registered from the routes, show what a role
+// grants, and show who holds it.
+//
+// Permissions themselves are never created by hand: they are registered by
+// the boot synchronization (PermissionSyncer) from the permissions the routes
+// declare or derive, and GrantPermissions registers an unknown one on the fly.
+// An admin interface therefore offers a closed list to pick from.
+type GrantAdmin interface {
+	CreateRole(ctx context.Context, role string) error
+	DeleteRole(ctx context.Context, role string) error
+	GrantPermissions(ctx context.Context, role string, actions ...Action) error
+	RevokePermissions(ctx context.Context, role string, actions ...Action) error
+	BindRoles(ctx context.Context, subjectID string, scope Scope, roles ...string) error
+	UnbindRoles(ctx context.Context, subjectID string, scope Scope, roles ...string) error
+
+	// Roles lists every role, sorted by name.
+	Roles(ctx context.Context) ([]string, error)
+	// Permissions lists every registered permission, sorted by name.
+	Permissions(ctx context.Context) ([]Action, error)
+	// RolePermissions lists the permissions of one role, sorted by name.
+	RolePermissions(ctx context.Context, role string) ([]Action, error)
+	// Bindings lists every binding of one subject, across all scopes.
+	Bindings(ctx context.Context, subjectID string) ([]Binding, error)
+	// RoleBindings lists every subject holding one role, with its scope.
+	RoleBindings(ctx context.Context, role string) ([]Binding, error)
+}
+
 // PermissionSyncer is optionally implemented by providers able to register
 // the permissions the application declares (route Permissions maps,
 // WithKnownPermissions), so that no permission row is ever inserted by hand.
