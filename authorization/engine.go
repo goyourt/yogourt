@@ -95,13 +95,26 @@ func (e *Engine) Decide(ctx context.Context, request Request) Decision {
 		return Decision{Reason: ReasonMissingPermission}
 	}
 
+	restrictions := e.restrictions[request.Action]
+	if len(restrictions) == 0 {
+		return Decision{Allowed: true, Reason: ReasonAllowed}
+	}
+
+	// The grants are cloned once, and only when the action actually has
+	// restrictions: the pure RBAC path — by far the common one — keeps
+	// allocating nothing, while no restriction can reach the grants the engine
+	// resolved and will memoize per request (see Grants.clone). The single copy
+	// is shared by the restrictions of one action, which is enough for that
+	// guarantee; restrictions are checks, not transformations, so a restriction
+	// mutating its input remains a bug on its side.
 	input := PolicyInput{
 		Subject:  request.Subject,
 		Action:   request.Action,
 		Scope:    request.Scope,
 		Resource: request.Resource,
+		Grants:   grants.clone(),
 	}
-	for _, restriction := range e.restrictions[request.Action] {
+	for _, restriction := range restrictions {
 		allowed, err := restriction(ctx, input)
 		if err != nil {
 			return Decision{Reason: ReasonPolicyError}
