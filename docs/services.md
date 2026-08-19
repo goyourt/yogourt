@@ -146,6 +146,8 @@ err = database.HardDelete(user)
 - <code>Delete</code> effectue une suppression douce et renseigne l’audit ;
 - <code>HardDelete</code> effectue une suppression définitive.
 
+<code>Delete</code> écrit deux instructions dans une seule transaction explicite : la colonne <code>deleted_by_id</code>, ciblée par UUID, puis la suppression douce GORM. Le callback GORM n’écrit que <code>deleted_at</code> et ne porte aucune colonne d’audit ; sans cette instruction dédiée, <code>deleted_by_id</code> restait NULL en base. Une ligne ne peut donc pas être supprimée sans auteur, ni attribuée sans être supprimée. Sans utilisateur authentifié, il n’y a pas de colonne d’audit à écrire et la suppression douce reste seule.
+
 Comme <code>GetOneBy</code> ne remonte pas les erreurs SQL, <code>Upsert</code> peut tenter un <code>Create</code> après un échec de lecture. Ne l’utilisez pas pour un chemin critique sans contrôle supplémentaire.
 
 Ces méthodes ne démarrent pas automatiquement une transaction commune. Dans un callback <code>Transaction</code>, utilisez directement le <code>*gorm.DB</code> reçu :
@@ -195,6 +197,8 @@ Le header doit avoir exactement la forme :
 Authorization: Bearer <token>
 ~~~
 
+Un header absent ou mal formé est refusé avec un corps générique, comme le reste de la chaîne d’autorisation : <code>401</code> et <code>{"error":"Unauthorized"}</code>. La raison interne reste côté serveur, dans les logs.
+
 Récupération de l’utilisateur :
 
 ~~~go
@@ -241,9 +245,33 @@ if !services.IsPasswordValid(password) {
 }
 
 hash, err := services.GetHashedPassword(password)
+
+err = services.CheckPassword(hash, password)
 ~~~
 
-<code>GetHashedPassword</code> utilise bcrypt. Le coût par défaut est 12 lorsque <code>security.hash_cost</code> vaut 0.
+<code>IsPasswordValid</code> vérifie la politique de complexité, pas un mot de passe existant. <code>GetHashedPassword</code> hache, <code>CheckPassword</code> compare : une application n’a donc pas à dépendre de bcrypt elle-même.
+
+<code>GetHashedPassword</code> utilise bcrypt. Le coût par défaut est 12 lorsque <code>security.hash_cost</code> vaut 0. <code>CheckPassword</code> retourne <code>nil</code> quand le mot de passe correspond au hash.
+
+L’erreur retournée par <code>CheckPassword</code> ne doit **jamais** être renvoyée au client, même reformulée : elle distingue un mot de passe faux (<code>bcrypt.ErrMismatchedHashAndPassword</code>) d’un hash malformé, tronqué ou de version inconnue (<code>bcrypt.ErrHashTooShort</code>, <code>bcrypt.HashVersionTooNewError</code>…). Cette différence indique à un attaquant si le compte existe et comment son identifiant est stocké. Journalisez-la si besoin, et répondez un message générique unique :
+
+~~~go
+var user models.User
+if err := database.GetOneBy(&user, map[string]any{"username": req.Username}); err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		routing.RespondAndAbort(c, http.StatusUnauthorized, "Invalid credentials")
+		return
+	}
+	routing.RespondServiceUnavailable(c)
+	return
+}
+
+// Utilisateur inconnu et mot de passe faux répondent strictement la même chose.
+if err := services.CheckPassword(user.Password, req.Password); err != nil {
+	routing.RespondAndAbort(c, http.StatusUnauthorized, "Invalid credentials")
+	return
+}
+~~~
 
 Suivi Redis des échecs :
 

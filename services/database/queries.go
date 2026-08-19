@@ -80,12 +80,50 @@ func (dw DataWriter) Upsert(obj interfaces.BaseInterface, values map[string]any)
 }
 
 func (dw DataWriter) Delete(obj interfaces.BaseInterface) error {
+	return dw.softDelete(providers.GetDB(), obj)
+}
+
+// softDelete soft deletes obj and really persists its deleted_by_id audit
+// column.
+//
+// GORM's soft-delete callback only writes the deleted_at column
+// (UPDATE ... SET deleted_at = ?): it never carries the other columns of the
+// model, so the value set by SetDeletedById used to be silently dropped and
+// deleted_by_id stayed NULL in database — unlike created_by_id and
+// updated_by_id, which Create and Update write along with every other column.
+// The audit column therefore needs its own explicit statement, targeting the
+// row by uuid exactly like Update does.
+//
+// Both statements share one explicit transaction: a row can never end up
+// soft deleted without its author, nor attributed to an author without being
+// deleted.
+func (dw DataWriter) softDelete(db *gorm.DB, obj interfaces.BaseInterface) error {
 	obj.SetDeletedById(dw.CurrentUser)
-	return providers.GetDB().Delete(obj).Error
+
+	// No authenticated user: there is no audit column to write, the plain
+	// soft delete is enough and needs no transaction.
+	if dw.CurrentUser == nil {
+		return db.Delete(obj).Error
+	}
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		err := tx.Model(obj).
+			Where("uuid = ?", obj.GetUuid()).
+			UpdateColumn("deleted_by_id", obj.GetDeletedById()).Error
+		if err != nil {
+			return err
+		}
+
+		return tx.Delete(obj).Error
+	})
 }
 
 func HardDelete(obj interfaces.BaseInterface) error {
-	return providers.GetDB().Unscoped().Delete(obj).Error
+	return hardDelete(providers.GetDB(), obj)
+}
+
+func hardDelete(db *gorm.DB, obj interfaces.BaseInterface) error {
+	return db.Unscoped().Delete(obj).Error
 }
 
 func SearchQuery[T interfaces.BaseInterface](values map[string]any, objs *[]T, page int, pageSize int) *gorm.DB {
