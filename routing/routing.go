@@ -27,9 +27,11 @@ type config struct {
 type Option func(*config)
 
 // WithAuthorizer enables route authorization: the engine is published
-// process-wide before middlewares and routes are loaded, every route must
-// then declare its permissions (or authorization.Public) and the framework
-// inserts the RBAC middleware in front of each protected handler.
+// process-wide before middlewares and routes are loaded, every route method
+// gets a permission — derived from its folder and its HTTP method by
+// convention, or overridden by the Permissions map of the folder (including
+// with authorization.Public) — and the framework inserts the RBAC middleware
+// in front of each protected handler. The resolved surface is logged at boot.
 func WithAuthorizer(engine *authorization.Engine) Option {
 	return func(cfg *config) {
 		cfg.authorizer = engine
