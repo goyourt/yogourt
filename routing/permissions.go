@@ -3,6 +3,7 @@ package routing
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 
@@ -12,6 +13,17 @@ import (
 	"github.com/goyourt/yogourt/compiler"
 	"github.com/goyourt/yogourt/core"
 )
+
+// derivedVerbs maps an HTTP method to the verb part of a permission derived by
+// convention. A method absent from this table has no convention: the route
+// must declare its permission explicitly.
+var derivedVerbs = map[string]string{
+	http.MethodGet:    "read",
+	http.MethodPost:   "create",
+	http.MethodPut:    "update",
+	http.MethodPatch:  "update",
+	http.MethodDelete: "delete",
+}
 
 // routeViolation is one route permission declaration problem found while
 // validating a route at startup (D2).
@@ -34,14 +46,72 @@ type routeFile struct {
 	hasSymbol   bool
 }
 
-// validateRoutePermissionGroup checks the Permissions declaration of one
-// route against the handlers exported by ALL the files of its folder. The
-// route permissions are declared in exactly one of those files, covering
-// every exported method of the folder; several declarations for the same
-// route refuse the boot. known is the optional list of permissions the
-// engine knows about; when non-empty, any declared value other than
-// authorization.Public must belong to it.
-func validateRoutePermissionGroup(route string, files []routeFile, known []authorization.Action) []routeViolation {
+// methodPermission is the effective permission of one route method: the value
+// declared in the Permissions map when the method is overridden, the one
+// derived from the folder and the HTTP method otherwise.
+type methodPermission struct {
+	permission string
+	derived    bool
+}
+
+// origin labels the permission source in the boot log of the authorization
+// surface.
+func (p methodPermission) origin() string {
+	if p.derived {
+		return "derived"
+	}
+
+	return "declared"
+}
+
+// derivePermission returns the permission derived by convention from the Gin
+// route path and the HTTP method, as "<resource>.<verb>": the resource is the
+// last static segment of the path below "/api" (lowercased), the verb comes
+// from derivedVerbs. ok is false when no convention applies — the "/api" route
+// itself has no resource segment, and an HTTP method outside derivedVerbs has
+// no verb — in which case the route must declare the permission explicitly.
+func derivePermission(routePath, method string) (permission string, ok bool) {
+	verb, known := derivedVerbs[strings.ToUpper(method)]
+	if !known {
+		return "", false
+	}
+
+	resource := ""
+	trimmed := strings.TrimPrefix(routePath, "/api")
+	for _, segment := range strings.Split(trimmed, "/") {
+		if segment == "" {
+			continue
+		}
+		// Gin parameters (":id") and catch-alls ("*path") carry no resource
+		// name: only static segments can name one.
+		if strings.HasPrefix(segment, ":") || strings.HasPrefix(segment, "*") {
+			continue
+		}
+		resource = segment
+	}
+	if resource == "" {
+		return "", false
+	}
+
+	return strings.ToLower(resource) + "." + verb, true
+}
+
+// validateRoutePermissionGroup resolves the effective permission of every
+// exported method of one route — the folder of a route may spread its handlers
+// over several files — and reports the declaration problems found.
+//
+// Permissions are derived by convention (see derivePermission); the optional
+// Permissions map of the folder is a partial override, so a method absent from
+// it simply keeps its derived permission. Remaining violations: the map
+// declared by several files of the same folder, an entry naming no exported
+// handler (typo), an empty permission, a method no convention can cover, and —
+// in strict mode, when known is non-empty — any unknown permission, be it
+// overridden or derived (authorization.Public is always exempt).
+//
+// The returned map holds the effective permission of each valid method, so the
+// loader builds the handler chains and the boot synchronization without
+// recomputing anything.
+func validateRoutePermissionGroup(route string, files []routeFile, known []authorization.Action) (map[string]methodPermission, []routeViolation) {
 	sortedFiles := append([]routeFile(nil), files...)
 	sort.Slice(sortedFiles, func(i, j int) bool { return sortedFiles[i].file < sortedFiles[j].file })
 
@@ -60,18 +130,10 @@ func validateRoutePermissionGroup(route string, files []routeFile, known []autho
 		}
 	}
 
-	if len(declaring) == 0 {
-		// A folder without any exported handler registers no route: it needs
-		// no Permissions symbol (utility files stay valid).
-		if len(methodFiles) == 0 {
-			return nil
-		}
-
-		return []routeViolation{{
-			File:    route,
-			Method:  "Permissions",
-			Problem: "missing required symbol: var Permissions map[string]string (declare the route permissions in one file of this folder)",
-		}}
+	if len(methodFiles) == 0 && len(declaring) == 0 {
+		// A folder without any exported handler registers no route and
+		// declares nothing: utility files stay valid.
+		return nil, nil
 	}
 	if len(declaring) > 1 {
 		names := make([]string, len(declaring))
@@ -79,20 +141,27 @@ func validateRoutePermissionGroup(route string, files []routeFile, known []autho
 			names[i] = f.file
 		}
 
-		return []routeViolation{{
+		return nil, []routeViolation{{
 			File:    route,
 			Method:  "Permissions",
 			Problem: fmt.Sprintf("declared in %d files (%s): route permissions must be declared in a single file", len(declaring), strings.Join(names, ", ")),
 		}}
 	}
 
-	declaration := declaring[0]
+	// At most one file overrides the convention for this route; without any
+	// declaration every method is derived.
+	var declaration routeFile
+	if len(declaring) == 1 {
+		declaration = declaring[0]
+	}
+
 	knownSet := make(map[string]bool, len(known))
 	for _, permission := range known {
 		knownSet[string(permission)] = true
 	}
 
 	var violations []routeViolation
+	effective := make(map[string]methodPermission, len(methodFiles))
 
 	methods := make([]string, 0, len(methodFiles))
 	for method := range methodFiles {
@@ -100,22 +169,29 @@ func validateRoutePermissionGroup(route string, files []routeFile, known []autho
 	}
 	sort.Strings(methods)
 	for _, method := range methods {
-		permission, declared := declaration.permissions[method]
-		if !declared {
-			violations = append(violations, routeViolation{
-				File:    methodFiles[method],
-				Method:  method,
-				Problem: "no permission declared for this exported method",
-			})
+		permission, overridden := declaration.permissions[method]
+		file := declaration.file
+		if !overridden {
+			file = methodFiles[method]
 
-			continue
+			derived, ok := derivePermission(route, method)
+			if !ok {
+				violations = append(violations, routeViolation{
+					File:    file,
+					Method:  method,
+					Problem: fmt.Sprintf("no permission can be derived for %s %s: declare it in var Permissions map[string]string", method, route),
+				})
+
+				continue
+			}
+			permission = derived
 		}
 		if permission == "" {
 			// An empty permission is invalid unconditionally: it could never
 			// be granted and Context.Authorize would answer 500 on every
 			// request. Catch it at boot even without a strict list (D2).
 			violations = append(violations, routeViolation{
-				File:    declaration.file,
+				File:    file,
 				Method:  method,
 				Problem: "empty permission declared",
 			})
@@ -123,12 +199,20 @@ func validateRoutePermissionGroup(route string, files []routeFile, known []autho
 			continue
 		}
 		if len(known) > 0 && permission != authorization.Public && !knownSet[permission] {
+			problem := fmt.Sprintf("unknown permission %q", permission)
+			if !overridden {
+				problem += " derived by convention: declare a known permission for this method"
+			}
 			violations = append(violations, routeViolation{
-				File:    declaration.file,
+				File:    file,
 				Method:  method,
-				Problem: fmt.Sprintf("unknown permission %q", permission),
+				Problem: problem,
 			})
+
+			continue
 		}
+
+		effective[method] = methodPermission{permission: permission, derived: !overridden}
 	}
 
 	entries := make([]string, 0, len(declaration.permissions))
@@ -146,7 +230,7 @@ func validateRoutePermissionGroup(route string, files []routeFile, known []autho
 		}
 	}
 
-	return violations
+	return effective, violations
 }
 
 // permissionReport formats all collected violations as a single exhaustive

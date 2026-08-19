@@ -6,6 +6,7 @@ import (
 	"log"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -29,12 +30,13 @@ type loadedRouteFile struct {
 
 // loadAPIHandlers loads every route plugin under basePath and registers its
 // handlers. engine is nil when no authorizer is configured (D1); otherwise
-// each route folder must declare its permissions in exactly one of its files
-// and the RBAC middleware is inserted in front of each non-public handler.
-// All loading errors and all permission violations are collected before
-// failing, so a boot failure reports every problem at once (D2). It returns
-// the deduplicated set of permissions declared by the routes, for the boot
-// synchronization with the grant provider.
+// every method of every route gets an effective permission — derived from the
+// folder and the HTTP method by convention, or overridden by the Permissions
+// map of the folder — and the RBAC middleware is inserted in front of each
+// non-public handler. All loading errors and all permission violations are
+// collected before failing, so a boot failure reports every problem at once
+// (D2). It returns the deduplicated set of effective permissions of the
+// routes, for the boot synchronization with the grant provider.
 func loadAPIHandlers(r *gin.Engine, basePath string, engine *authorization.Engine) ([]authorization.Action, error) {
 	files, err := walkGoFiles(basePath)
 	if err != nil {
@@ -102,6 +104,9 @@ func loadAPIHandlers(r *gin.Engine, basePath string, engine *authorization.Engin
 	}
 
 	var violations []routeViolation
+	// Effective permission of every method of every route, empty when no
+	// authorizer is configured (the handler chain then ignores permissions).
+	effective := make(map[string]map[string]methodPermission, len(groups))
 	if engine == nil {
 		// D1: without an authorizer a Permissions symbol is ignored.
 		for _, lf := range loaded {
@@ -128,7 +133,9 @@ func loadAPIHandlers(r *gin.Engine, basePath string, engine *authorization.Engin
 					hasSymbol:   lf.hasSymbol && lf.symErr == nil,
 				})
 			}
-			violations = append(violations, validateRoutePermissionGroup(routePath, groupRouteFiles, known)...)
+			routePermissions, groupViolations := validateRoutePermissionGroup(routePath, groupRouteFiles, known)
+			violations = append(violations, groupViolations...)
+			effective[routePath] = routePermissions
 		}
 	}
 
@@ -143,28 +150,29 @@ func loadAPIHandlers(r *gin.Engine, basePath string, engine *authorization.Engin
 
 	declared := make(map[authorization.Action]bool)
 	for routePath, groupFiles := range groups {
-		// After validation, at most one file of the group declares the route
-		// permissions; its map covers every method of the folder.
-		var permissions map[string]string
-		if engine != nil {
-			for _, lf := range groupFiles {
-				if lf.hasSymbol && lf.symErr == nil {
-					permissions = lf.permissions
-					break
-				}
-			}
-			for _, permission := range permissions {
-				if permission != authorization.Public && permission != "" {
-					declared[authorization.Action(permission)] = true
-				}
+		// Validation resolved the effective permission of every method of the
+		// route: overridden by the Permissions map, or derived by convention.
+		routePermissions := effective[routePath]
+		for _, permission := range routePermissions {
+			if permission.permission != authorization.Public {
+				declared[authorization.Action(permission.permission)] = true
 			}
 		}
 
 		baseMw := middleware.GetMiddleware(routePath)
 		for _, lf := range groupFiles {
 			for m, h := range lf.routes {
-				r.Handle(m, routePath, routeHandlerChain(engine, permissions[m], baseMw, h)...)
+				r.Handle(m, routePath, routeHandlerChain(engine, routePermissions[m].permission, baseMw, h)...)
 			}
+		}
+	}
+
+	if engine != nil {
+		// The convention removed the fail-fast on a missing declaration: the
+		// operator must still be able to read the whole authorization surface
+		// at every boot.
+		for _, line := range authorizationSurfaceLines(effective) {
+			log.Print(line)
 		}
 	}
 
@@ -176,9 +184,45 @@ func loadAPIHandlers(r *gin.Engine, basePath string, engine *authorization.Engin
 	return declaredList, nil
 }
 
+// authorizationSurfaceLines formats the authorization surface as one compact
+// line per route method, sorted by route then method, each naming the
+// effective permission and where it comes from.
+func authorizationSurfaceLines(effective map[string]map[string]methodPermission) []string {
+	type entry struct {
+		route  string
+		method string
+		line   string
+	}
+
+	entries := make([]entry, 0, len(effective))
+	for route, permissions := range effective {
+		for method, permission := range permissions {
+			entries = append(entries, entry{
+				route:  route,
+				method: method,
+				line:   fmt.Sprintf("authorization: %s %s -> %s (%s)", method, route, permission.permission, permission.origin()),
+			})
+		}
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].route != entries[j].route {
+			return entries[i].route < entries[j].route
+		}
+
+		return entries[i].method < entries[j].method
+	})
+
+	lines := make([]string, len(entries))
+	for i, e := range entries {
+		lines[i] = e.line
+	}
+
+	return lines
+}
+
 // routeHandlerChain assembles the final handler chain for one route method:
 // inherited callbacks first, then — only when an authorizer is configured —
-// the middleware recording the declared permission, then the RBAC middleware
+// the middleware recording the effective permission, then the RBAC middleware
 // (last, right before the handler) unless the method is authorization.Public.
 // Without an authorizer the chain is strictly identical to pre-v2 (D1).
 func routeHandlerChain(engine *authorization.Engine, permission string, baseMw []gin.HandlerFunc, handler gin.HandlerFunc) []gin.HandlerFunc {
