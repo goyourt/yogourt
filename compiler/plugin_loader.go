@@ -3,6 +3,8 @@ package compiler
 import (
 	"errors"
 	"fmt"
+	"log"
+	"net/http"
 	"plugin"
 	"reflect"
 	"strconv"
@@ -72,7 +74,10 @@ func adaptRouteHandler(sym any) (gin.HandlerFunc, error) {
 	return func(c *gin.Context) {
 		params, err := hydrateRouteParams(c, paramsType)
 		if err != nil {
-			c.AbortWithStatusJSON(400, gin.H{"error": err.Error()})
+			// The conversion detail describes the handler signature, not the
+			// request: it stays server-side, the caller gets a generic body.
+			log.Printf("invalid route parameters: %v", err)
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "Invalid request parameters"})
 			return
 		}
 		value.Call([]reflect.Value{reflect.ValueOf(core.NewContext(c)), params})

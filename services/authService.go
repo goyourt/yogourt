@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -16,19 +17,26 @@ import (
 func Authenticate(c *gin.Context, currentUser interfaces.BaseInterface) {
 	token, err := GetRequestToken(c)
 	if err != nil {
-		routing.RespondAndAbort(c, http.StatusUnauthorized, err.Error())
+		// The reason (missing header, malformed header…) stays server-side:
+		// the authorization chain answers generic bodies only, and the
+		// internal error strings of the framework must not describe its
+		// structure to an anonymous caller (AUTHZ-014).
+		log.Printf("authentication refused: %v", err)
+		routing.RespondAndAbort(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
 	parsedToken, err := ValidToken(token)
 	if err != nil {
-		routing.RespondAndAbort(c, http.StatusUnauthorized, "Invalid token")
+		log.Printf("authentication refused: %v", err)
+		routing.RespondAndAbort(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
 	userUuid, err := GetUUIDClaim(parsedToken, "uuid")
 	if err != nil {
-		routing.RespondAndAbort(c, http.StatusUnauthorized, "Invalid token")
+		log.Printf("authentication refused: %v", err)
+		routing.RespondAndAbort(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
@@ -46,9 +54,13 @@ func Authenticate(c *gin.Context, currentUser interfaces.BaseInterface) {
 // authentication refusal (AUTHZ-014).
 func respondUserLookupFailure(c *gin.Context, err error) {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		routing.RespondAndAbort(c, http.StatusUnauthorized, "User not found")
+		// The subject of a validly signed token has no row: an anonymous
+		// caller must not learn that, the body stays the generic refusal.
+		log.Printf("authentication refused: no user for the token subject")
+		routing.RespondAndAbort(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
+	log.Printf("authentication unavailable: %v", err)
 	routing.RespondServiceUnavailable(c)
 }
 
