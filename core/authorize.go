@@ -30,7 +30,7 @@ func (c *Context) HasPermission(action string) bool {
 		return false
 	}
 
-	ctx := c.requestContext()
+	ctx := c.authorizationContext()
 	subject, _ := authorization.SubjectFromContext(ctx)
 	allowed, err := engine.HasPermission(ctx, subject, authorization.ScopeFromContext(ctx), authorization.Action(action))
 
@@ -86,7 +86,7 @@ func (c *Context) AuthorizeAction(action string, resource any) bool {
 }
 
 func (c *Context) decide(engine *authorization.Engine, action authorization.Action, resource any) authorization.Decision {
-	ctx := c.requestContext()
+	ctx := c.authorizationContext()
 	subject, _ := authorization.SubjectFromContext(ctx)
 
 	return engine.Decide(ctx, authorization.Request{
@@ -97,12 +97,39 @@ func (c *Context) decide(engine *authorization.Engine, action authorization.Acti
 	})
 }
 
-func (c *Context) requestContext() context.Context {
+// authorizationContext returns the context every authorization helper of the
+// request must use: the request context, made sure to carry the per-request
+// grant cache (AUTHZ-601). A handler calling Authorize then Can then
+// HasPermission therefore resolves the grants of the subject once, and shares
+// that resolution with the RBAC middleware that already ran — which is where
+// the cache usually comes from.
+//
+// The request is rewritten when a cache had to be created, so that the
+// helpers called later in the same handler see it: the context of a request
+// only lives in c.Request, exactly as for the subject attached by
+// services.AttachSubject.
+//
+// A Context without a request — a unit test building one by hand — keeps
+// working with no memoization at all: the background context carries no
+// cache, so every check queries the provider as before.
+//
+// The rewrite happens in the request's goroutine, at most once per request
+// since the RBAC middleware usually installed the cache already. A handler
+// fanning out into goroutines must hand them the context (or a c.Copy()), as
+// Gin already requires — the cache itself is safe for concurrent use, a
+// *gin.Context never was.
+func (c *Context) authorizationContext() context.Context {
 	if c.Request == nil {
 		return context.Background()
 	}
 
-	return c.Request.Context()
+	ctx := c.Request.Context()
+	cached := authorization.EnsureGrantCache(ctx)
+	if cached != ctx {
+		c.Request = c.Request.WithContext(cached)
+	}
+
+	return cached
 }
 
 func (c *Context) routePermission() (string, bool) {

@@ -1,6 +1,9 @@
 package authorization
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Engine evaluates authorization requests: RBAC permission check first, then
 // the ABAC restrictions registered for the action. It is immutable once built
@@ -10,6 +13,7 @@ type Engine struct {
 	restrictions     map[Action][]Restriction
 	notFoundOnDeny   map[Action]bool
 	knownPermissions []Action
+	decisionHooks    []DecisionHook
 }
 
 // Option configures an Engine at construction time.
@@ -61,6 +65,22 @@ func WithKnownPermissions(perms ...Action) Option {
 	}
 }
 
+// WithDecisionHook registers a hook notified of every decision the engine
+// takes, for logs and metrics. Several hooks can be registered; they are
+// called in registration order. A nil hook is ignored.
+//
+// The hook cannot influence the decision: it receives values and returns
+// nothing, and it is called once the decision is final. A panic inside a hook
+// is recovered and does not affect the answer given to the caller.
+func WithDecisionHook(hook DecisionHook) Option {
+	return func(e *Engine) {
+		if hook == nil {
+			return
+		}
+		e.decisionHooks = append(e.decisionHooks, hook)
+	}
+}
+
 // KnownPermissions returns the declared permission list, if any.
 func (e *Engine) KnownPermissions() []Action {
 	perms := make([]Action, len(e.knownPermissions))
@@ -77,7 +97,30 @@ func (e *Engine) NotFoundOnDeny(action Action) bool {
 
 // Decide evaluates a request. Deny by default: any technical failure results
 // in a denied decision with the matching reason, never in an authorization.
+//
+// Every decision is reported to the hooks registered with WithDecisionHook,
+// after it was taken and without any way to change it.
 func (e *Engine) Decide(ctx context.Context, request Request) Decision {
+	if len(e.decisionHooks) == 0 {
+		return e.decide(ctx, request)
+	}
+
+	started := time.Now()
+	decision := e.decide(ctx, request)
+	e.notify(ctx, DecisionEvent{
+		Kind:      KindFull,
+		SubjectID: request.Subject.ID,
+		Action:    request.Action,
+		Scope:     request.Scope,
+		Allowed:   decision.Allowed,
+		Reason:    decision.Reason,
+		Duration:  time.Since(started),
+	})
+
+	return decision
+}
+
+func (e *Engine) decide(ctx context.Context, request Request) Decision {
 	if request.Subject.ID == "" {
 		return Decision{Reason: ReasonUnauthenticated}
 	}
@@ -145,7 +188,32 @@ func (e *Engine) SyncPermissions(ctx context.Context, permissions []Action) erro
 
 // HasPermission answers the RBAC question alone, without evaluating
 // restrictions. It reports false without error for an anonymous subject.
+//
+// It is the question the RBAC middleware asks, so it is reported to the
+// decision hooks as well — with Kind set to KindPermission, since most
+// refusals of an application happen here and a hook that only saw Decide
+// would miss them.
 func (e *Engine) HasPermission(ctx context.Context, subject Subject, scope Scope, action Action) (bool, error) {
+	if len(e.decisionHooks) == 0 {
+		return e.hasPermission(ctx, subject, scope, action)
+	}
+
+	started := time.Now()
+	allowed, err := e.hasPermission(ctx, subject, scope, action)
+	e.notify(ctx, DecisionEvent{
+		Kind:      KindPermission,
+		SubjectID: subject.ID,
+		Action:    action,
+		Scope:     scope,
+		Allowed:   allowed,
+		Reason:    permissionReason(subject, allowed, err),
+		Duration:  time.Since(started),
+	})
+
+	return allowed, err
+}
+
+func (e *Engine) hasPermission(ctx context.Context, subject Subject, scope Scope, action Action) (bool, error) {
 	if subject.ID == "" {
 		return false, nil
 	}
@@ -164,8 +232,15 @@ func (e *Engine) HasPermission(ctx context.Context, subject Subject, scope Scope
 // resolveGrants resolves the union of the grants bound to the requested scope
 // and to ScopeGlobal. When the requested scope is ScopeGlobal, the provider
 // is called only once.
+//
+// Each of the two resolutions goes through the per-request memoization when
+// the context carries a grant cache (WithGrantCache): the union is rebuilt on
+// every call — it costs no provider round-trip — while each (subject, scope)
+// pair is asked of the provider at most once per request. Memoizing the two
+// scopes separately also lets the ScopeGlobal answer be reused by checks made
+// on different scopes within the same request.
 func (e *Engine) resolveGrants(ctx context.Context, subject Subject, scope Scope) (Grants, error) {
-	grants, err := e.provider.Resolve(ctx, subject, scope)
+	grants, err := resolveScopeGrants(ctx, e.provider, subject, scope)
 	if err != nil {
 		return Grants{}, err
 	}
@@ -173,7 +248,7 @@ func (e *Engine) resolveGrants(ctx context.Context, subject Subject, scope Scope
 		return grants, nil
 	}
 
-	global, err := e.provider.Resolve(ctx, subject, ScopeGlobal)
+	global, err := resolveScopeGrants(ctx, e.provider, subject, ScopeGlobal)
 	if err != nil {
 		return Grants{}, err
 	}

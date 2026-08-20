@@ -7,6 +7,7 @@ type contextKey int
 const (
 	subjectContextKey contextKey = iota
 	scopeContextKey
+	grantCacheContextKey
 )
 
 // WithSubject attaches the authenticated subject to the context. This is the

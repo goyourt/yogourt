@@ -3,6 +3,7 @@
 package ginmw
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -44,7 +45,7 @@ func enforce(c *gin.Context, engine *authorization.Engine, action authorization.
 		return
 	}
 
-	ctx := c.Request.Context()
+	ctx := attachGrantCache(c)
 	subject, _ := authorization.SubjectFromContext(ctx)
 	if subject.ID == "" {
 		AbortDenied(c, engine, action, authorization.ReasonUnauthenticated)
@@ -69,6 +70,32 @@ func enforce(c *gin.Context, engine *authorization.Engine, action authorization.
 	}
 
 	c.Next()
+}
+
+// attachGrantCache makes sure the request carries the per-request grant cache
+// and returns the request context to use for the check. The cache is created
+// here because the middleware is where a request enters the authorization
+// layer: the grants it resolves are then reused by the handler's
+// Context.Authorize instead of being resolved a second time (AUTHZ-601).
+//
+// The request itself must be rewritten, not only the local context: Gin
+// exposes the request context through c.Request, so a context kept in a local
+// variable would stay invisible to the handler and to every later middleware
+// — the same reason services.AttachSubject rewrites c.Request. The cache is
+// created once per request, which is exactly what keeps a revocation visible
+// from the next request on (AUTHZ-602).
+func attachGrantCache(c *gin.Context) context.Context {
+	if c.Request == nil {
+		return context.Background()
+	}
+
+	ctx := c.Request.Context()
+	cached := authorization.EnsureGrantCache(ctx)
+	if cached != ctx {
+		c.Request = c.Request.WithContext(cached)
+	}
+
+	return cached
 }
 
 // AbortDenied maps a denied decision to its HTTP status and aborts the

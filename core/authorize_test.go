@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -33,6 +34,52 @@ func newTestContext(t *testing.T, subject *authorization.Subject) (*core.Context
 	ginCtx.Request = request
 
 	return core.NewContext(ginCtx), recorder
+}
+
+// lockableArticle is a resource a request can lock between two checks.
+type lockableArticle struct {
+	locked bool
+}
+
+// countingProvider counts the resolutions the store is asked for, so a test
+// can prove the per-request memoization actually spares provider calls
+// (AUTHZ-601). It is concurrency-safe: a handler may authorize from several
+// goroutines.
+type countingProvider struct {
+	inner authorization.GrantProvider
+
+	mu    sync.Mutex
+	calls int
+}
+
+func (p *countingProvider) Resolve(ctx context.Context, subject authorization.Subject, scope authorization.Scope) (authorization.Grants, error) {
+	p.mu.Lock()
+	p.calls++
+	p.mu.Unlock()
+
+	return p.inner.Resolve(ctx, subject, scope)
+}
+
+func (p *countingProvider) countAndReset() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	calls := p.calls
+	p.calls = 0
+
+	return calls
+}
+
+// newScopedContext builds a context for a request made within a scope, so
+// that a resolution costs the two provider calls of the union {scope,
+// ScopeGlobal} and the memoization is measurable.
+func newScopedContext(t *testing.T, subject *authorization.Subject, scope authorization.Scope) *core.Context {
+	t.Helper()
+
+	c, _ := newTestContext(t, subject)
+	c.Request = c.Request.WithContext(authorization.WithScope(c.Request.Context(), scope))
+
+	return c
 }
 
 func assertAborted(t *testing.T, c *core.Context, recorder *httptest.ResponseRecorder, status int) {
@@ -93,14 +140,23 @@ func TestContextAuthorization(t *testing.T) {
 	if err := provider.BindRoles(context.Background(), "subject-1", authorization.ScopeGlobal, "editor"); err != nil {
 		t.Fatal(err)
 	}
+	counter := &countingProvider{inner: provider}
 	engine := authorization.NewEngine(
-		authorization.WithProvider(provider),
+		authorization.WithProvider(counter),
 		authorization.WithNotFoundOnDeny("article.hidden"),
 		authorization.WithRestriction("article.denied", func(context.Context, authorization.PolicyInput) (bool, error) {
 			return false, nil
 		}),
 		authorization.WithRestriction("article.broken", func(context.Context, authorization.PolicyInput) (bool, error) {
 			return false, errors.New("policy failure")
+		}),
+		// A restriction whose answer depends on the state of the resource:
+		// the state can change during the request, which is why a final
+		// decision may never be cached (AUTHZ-606).
+		authorization.WithRestriction("article.stateful", func(_ context.Context, input authorization.PolicyInput) (bool, error) {
+			article, ok := input.Resource.(*lockableArticle)
+
+			return ok && !article.locked, nil
 		}),
 	)
 	if err := authorization.Publish(engine); err != nil {
@@ -213,5 +269,85 @@ func TestContextAuthorization(t *testing.T) {
 			t.Error("Authorize is undefined without a declared permission")
 		}
 		assertAborted(t, c, recorder, http.StatusInternalServerError)
+	})
+
+	// AUTHZ-601: several helpers called on the same request share one grant
+	// resolution, because the Context helpers put the per-request cache on
+	// c.Request the same way the RBAC middleware does.
+	t.Run("the helpers of one request share the grant cache", func(t *testing.T) {
+		c := newScopedContext(t, subject, "tenant-1")
+		counter.countAndReset()
+
+		if !c.HasPermission("article.read") {
+			t.Error("expected the granted permission to be reported")
+		}
+		if !c.Can("article.read", nil) {
+			t.Error("expected Can to allow the granted permission")
+		}
+		if !c.AuthorizeAction("article.read", nil) {
+			t.Error("expected AuthorizeAction to allow the granted permission")
+		}
+
+		// The union {tenant-1, ScopeGlobal} resolved once for three checks.
+		if got := counter.countAndReset(); got != 2 {
+			t.Errorf("provider calls = %d, want 2 for the whole request", got)
+		}
+	})
+
+	// AUTHZ-606: only the RBAC grants are memoized. The restriction is
+	// re-evaluated on every call and sees the resource as it is then.
+	t.Run("restrictions are re-evaluated despite the cache", func(t *testing.T) {
+		if err := provider.GrantPermissions(context.Background(), "editor", "article.stateful"); err != nil {
+			t.Fatal(err)
+		}
+
+		c := newScopedContext(t, subject, "tenant-1")
+		counter.countAndReset()
+
+		article := &lockableArticle{}
+		if !c.Can("article.stateful", article) {
+			t.Fatal("expected the unlocked article to be authorized")
+		}
+
+		// The request itself changes the state of the resource.
+		article.locked = true
+		if c.Can("article.stateful", article) {
+			t.Error("a final decision must never be cached: the restriction has to run again")
+		}
+
+		if got := counter.countAndReset(); got != 2 {
+			t.Errorf("provider calls = %d, want 2: the grants alone are memoized", got)
+		}
+	})
+
+	// AUTHZ-602: the cache belongs to the request, so a revocation is visible
+	// from the next request on, with nothing to invalidate.
+	t.Run("a revocation is visible on the next request", func(t *testing.T) {
+		ctx := context.Background()
+
+		first := newScopedContext(t, subject, "tenant-1")
+		if !first.HasPermission("article.read") {
+			t.Fatal("expected the permission before the revocation")
+		}
+
+		if err := provider.UnbindRoles(ctx, "subject-1", authorization.ScopeGlobal, "editor"); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if err := provider.BindRoles(ctx, "subject-1", authorization.ScopeGlobal, "editor"); err != nil {
+				t.Fatal(err)
+			}
+		})
+
+		second := newScopedContext(t, subject, "tenant-1")
+		if second.HasPermission("article.read") {
+			t.Error("the revocation must be visible on the next request")
+		}
+
+		// Within the request that already resolved them, the grants stay
+		// stable: that coherence is the point of a per-request cache.
+		if !first.HasPermission("article.read") {
+			t.Error("the grants of a request in flight must stay coherent")
+		}
 	})
 }
