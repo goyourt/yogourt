@@ -197,6 +197,15 @@ go test -race ./...
 go vet ./...
 ~~~
 
+Un test d’intégration compile de vrais plugins (<code>go build -buildmode=plugin</code>) et fait tourner le chargeur du framework dessus : ouverture des <code>.so</code>, extraction des symboles, enregistrement des routes, permissions dérivées et déclarées. Il est inclus dans <code>go test ./...</code> et coûte quelques secondes par plugin, beaucoup plus au premier appel puisque toutes les dépendances doivent être recompilées pour ce mode de construction :
+
+~~~sh
+go test ./routing -run TestPluginRoutesEndToEnd -v   # ce test seul
+go test -short ./...                                 # le saute
+~~~
+
+Sur une plateforme sans support des plugins Go, le test se saute de lui-même avec un message explicite.
+
 ## Limites connues de la préversion
 
 - les plugins Go ne sont pas portables vers Windows et sont sensibles à toute différence de toolchain ou de dépendances ;
