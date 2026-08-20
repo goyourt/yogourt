@@ -21,8 +21,11 @@ import (
 const (
 	defaultHost = "0.0.0.0"
 	// productionMode is the config mode where a weak JWT secret is fatal
-	// rather than merely reported.
+	// rather than merely reported, and where Gin runs in release mode.
 	productionMode = "production"
+
+	// testConfigMode maps the config mode to Gin's own test mode.
+	testConfigMode = "test"
 )
 
 // config holds the settings applied by the functional options of Initialize.
@@ -69,10 +72,14 @@ func Initialize(apiFolder string, options ...Option) {
 		}
 	}
 
-	r := gin.Default()
-
 	mainConfig := providers.GetMainConfig()
 	validateSecretKeyAtBoot(mainConfig.Security.SecretKey, mainConfig.Mode)
+
+	// Before gin.Default(): Gin logs its mode as it builds the engine, so
+	// setting it afterwards would leave a log line contradicting reality.
+	applyGinMode(mainConfig.Mode)
+
+	r := gin.Default()
 	r.Use(cors.New(buildCORSConfig(mainConfig)))
 
 	r.OPTIONS("/*path", func(c *gin.Context) {
@@ -101,6 +108,30 @@ func Initialize(apiFolder string, options ...Option) {
 	serverConfig := mainConfig.Server
 	if err := r.Run(listenAddress(serverConfig.Host, serverConfig.Port)); err != nil {
 		log.Fatal("Error starting server: ", err)
+	}
+}
+
+// applyGinMode aligns Gin's own mode with the application mode of the config:
+// mode "production" runs Gin in release mode, "test" in test mode, anything
+// else — including an empty value — in debug mode. Without this, mode had no
+// effect on Gin and a production deployment kept serving with the debug logger
+// and the route dump.
+//
+// An explicit GIN_MODE environment variable wins. It is Gin's own documented
+// lever, deployments already rely on it, and honouring the config over it
+// would silently break them.
+func applyGinMode(mode string) {
+	if os.Getenv(gin.EnvGinMode) != "" {
+		return
+	}
+
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case productionMode:
+		gin.SetMode(gin.ReleaseMode)
+	case testConfigMode:
+		gin.SetMode(gin.TestMode)
+	default:
+		gin.SetMode(gin.DebugMode)
 	}
 }
 
