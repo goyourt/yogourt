@@ -55,12 +55,20 @@ func HydrateRelation(obj interfaces.BaseInterface, table string, relation interf
 	return providers.GetDB().Preload(table).Find(obj, obj.GetID()).Error
 }
 
-// HydrateManyToManyRelation preloads a many-to-many relation. It returns
-// GORM's error; call sites that ignore it keep compiling.
+// HydrateManyToManyRelation preloads a many-to-many relation that has not been
+// loaded yet. It returns GORM's error; call sites that ignore it keep
+// compiling.
+//
+// relation is a pointer to the slice field to fill. The guard tests the SLICE,
+// not the pointer: a caller passes &model.Field, whose address is never nil, so
+// testing the pointer made the helper return immediately every time and never
+// preload anything. A nil slice means "not loaded"; an allocated slice, even
+// empty, is left alone.
 func HydrateManyToManyRelation[T interfaces.BaseInterface](obj interfaces.BaseInterface, table string, relation *[]T) error {
-	if !reflect.ValueOf(relation).IsNil() {
+	if relation == nil || *relation != nil {
 		return nil
 	}
+
 	return providers.GetDB().Preload(table).Find(obj, obj.GetID()).Error
 }
 
