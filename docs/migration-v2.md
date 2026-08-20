@@ -278,12 +278,12 @@ Pendant la migration :
 
 ## 10. Réviser JWT et fichiers
 
-La v2 crée toujours des JWT HS256 avec <code>uuid</code> et <code>exp</code>, mais la validation ne restreint pas encore explicitement l’algorithme et ne vérifie ni issuer ni audience.
+La v2 crée toujours des JWT HS256 avec <code>uuid</code> et <code>exp</code>. La validation restreint désormais explicitement l’algorithme à <code>HS256</code>, valide le format du claim <code>uuid</code> et exige un secret de 32 octets minimum, contrôlé dès le démarrage (warning hors production, refus de démarrer en mode <code>production</code>). Elle ne vérifie toujours ni issuer ni audience, et n’exige pas explicitement la présence de <code>exp</code> sur un token qu’elle n’a pas émis.
 
 Avant mise en production :
 
-- configurez un secret non vide, long et aléatoire ;
-- imposez l’algorithme et les claims attendus dans une couche applicative ;
+- configurez un secret aléatoire de 32 octets au moins, sous peine de refus de démarrage ;
+- imposez les claims attendus (issuer, audience, expiration obligatoire) dans une couche applicative ;
 - vérifiez les types MIME et extensions des uploads ;
 - gérez les erreurs d’écriture de fichiers ;
 - ajoutez un TTL et une purge au suivi Redis des échecs de mot de passe.
@@ -318,5 +318,5 @@ Une migration n’est complète que lorsque le binaire et tous les plugins ont �
 - prise en compte de <code>server.cors</code> et correction de <code>cors.max_age</code> ;
 - stratégie de portabilité en dehors des plugins Go ;
 - retours d’erreur DB et fichiers ;
-- durcissement JWT ;
+- durcissement JWT restant : issuer, audience et expiration obligatoire ;
 - détection des collisions de routes.
