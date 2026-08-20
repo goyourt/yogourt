@@ -173,7 +173,7 @@ err = database.UpsertRelations(c, user, []string{"Profile"})
 
 <code>UpsertRelations</code> recherche des méthodes <code>GetRelation</code> et <code>SetRelation</code> par réflexion. Il ne prend pas encore en charge l’upsert many-to-many.
 
-<code>HydrateManyToManyRelation</code> est public, mais sa garde actuelle retourne immédiatement pour un pointeur de slice non nil ; ne vous appuyez pas sur ce helper avant sa correction.
+<code>HydrateManyToManyRelation</code> attend un pointeur vers le champ slice à remplir et teste la <strong>slice</strong>, non le pointeur : une slice nil signifie « non chargée » et déclenche le préchargement, une slice allouée — même vide — est laissée telle quelle. La garde testait auparavant le pointeur, dont l'adresse n'est jamais nulle : le helper ne préchargeait donc jamais rien.
 
 ## Authentification
 
