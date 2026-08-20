@@ -148,7 +148,7 @@ err = database.HardDelete(user)
 
 <code>Delete</code> écrit deux instructions dans une seule transaction explicite : la colonne <code>deleted_by_id</code>, ciblée par UUID, puis la suppression douce GORM. Le callback GORM n’écrit que <code>deleted_at</code> et ne porte aucune colonne d’audit ; sans cette instruction dédiée, <code>deleted_by_id</code> restait NULL en base. Une ligne ne peut donc pas être supprimée sans auteur, ni attribuée sans être supprimée. Sans utilisateur authentifié, il n’y a pas de colonne d’audit à écrire et la suppression douce reste seule.
 
-Comme <code>GetOneBy</code> ne remonte pas les erreurs SQL, <code>Upsert</code> peut tenter un <code>Create</code> après un échec de lecture. Ne l’utilisez pas pour un chemin critique sans contrôle supplémentaire.
+<code>Upsert</code> distingue désormais les deux échecs de sa lecture : seule l’absence de ligne (<code>gorm.ErrRecordNotFound</code>) mène à un <code>Create</code>, toute autre erreur de <code>GetOneBy</code> est retournée telle quelle sans écriture. Une panne SQL ne se transforme donc plus en création silencieuse.
 
 Ces méthodes ne démarrent pas automatiquement une transaction commune. Dans un callback <code>Transaction</code>, utilisez directement le <code>*gorm.DB</code> reçu :
 
@@ -197,7 +197,7 @@ Le header doit avoir exactement la forme :
 Authorization: Bearer <token>
 ~~~
 
-Un header absent ou mal formé est refusé avec un corps générique, comme le reste de la chaîne d’autorisation : <code>401</code> et <code>{"error":"Unauthorized"}</code>. La raison interne reste côté serveur, dans les logs.
+Un header absent ou mal formé est refusé avec un corps générique, comme le reste de la chaîne d’autorisation : <code>401</code> et <code>{"error":"Unauthorized"}</code>. La raison interne reste côté serveur, dans les logs. Il en va de même d’un token invalide, d’un claim <code>uuid</code> absent ou mal formé et d’un token valide dont le sujet n’a aucune ligne en base : ces quatre cas renvoient strictement la même réponse. Une panne de base pendant la recherche de l’utilisateur, elle, répond <code>503</code> : une indisponibilité n’est jamais maquillée en refus d’authentification.
 
 Récupération de l’utilisateur :
 
@@ -228,14 +228,14 @@ parsed, err := services.ValidToken(raw)
 uuid, err := services.GetClaim(parsed, "uuid")
 ~~~
 
-Limites de sécurité actuelles :
+Le secret de signature est validé : <code>services.ValidateSecretKey</code> refuse un secret vide ou de moins de 32 octets, et <code>CreateToken</code> comme <code>ValidToken</code> échouent alors sans produire ni accepter de token. <code>ValidToken</code> fixe aussi explicitement l’algorithme accepté (<code>HS256</code>), ce qui ferme la substitution d’algorithme. Le démarrage signale le problème avant la première requête : hors production un secret vide ou trop court n’est que journalisé en warning, en mode <code>production</code> il empêche le démarrage.
 
-- la robustesse et la présence du secret ne sont pas validées ;
-- <code>ValidToken</code> ne fixe pas explicitement la liste des algorithmes acceptés ;
+Limites de sécurité restantes :
+
 - aucun issuer ou audience n’est vérifié ;
 - l’expiration n’est pas explicitement exigée pour les tokens qui ne sont pas créés par Yogourt.
 
-Pour un usage sensible, encapsulez ces helpers avec une politique JWT stricte ou attendez leur durcissement avant la v2 stable.
+Pour un usage sensible, complétez ces helpers par une politique de claims (issuer, audience, expiration obligatoire) dans une couche applicative.
 
 ## Mots de passe
 

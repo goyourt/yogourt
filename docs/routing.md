@@ -142,7 +142,7 @@ Types pris en charge :
 - <code>float32</code> et <code>float64</code> ;
 - pointeurs vers ces types.
 
-L’injection concerne uniquement les paramètres de chemin Gin. Elle ne lit ni la query string, ni les headers, ni le body. Une conversion impossible renvoie HTTP 400 avec une erreur JSON et interrompt le handler.
+L’injection concerne uniquement les paramètres de chemin Gin. Elle ne lit ni la query string, ni les headers, ni le body. Une conversion impossible interrompt le handler avec un HTTP 400 au corps générique — <code>{"error":"Invalid request parameters"}</code> — le détail de la conversion restant côté serveur, dans les logs.
 
 ## Body JSON
 
@@ -169,7 +169,7 @@ Passez un pointeur vers une structure. Une erreur de binding renvoie HTTP 422 :
 {"error":"Invalid request: argument mismatch"}
 ~~~
 
-Le helper tente aussi d’hydrater certaines relations qui implémentent <code>interfaces.BaseInterface</code> et possèdent un UUID. Les erreurs de base de données de cette hydratation ne sont actuellement pas remontées.
+Le helper tente aussi d’hydrater certaines relations qui implémentent <code>interfaces.BaseInterface</code> et possèdent un UUID. Une panne de base pendant cette hydratation interrompt désormais la requête avec un <code>503</code> générique. Un UUID inconnu, en revanche, laisse volontairement l’objet non hydraté et laisse tourner le handler : répondre autrement donnerait à un appelant anonyme un oracle d’existence sur la table référencée.
 
 ## Réponses
 

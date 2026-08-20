@@ -78,7 +78,7 @@ Le champ <code>cors.max_age</code> est volontairement omis. L’implémentation 
 | --- | --- | --- |
 | <code>app_name</code> | chaîne | Métadonnée applicative |
 | <code>version</code> | chaîne | Métadonnée de version |
-| <code>mode</code> | chaîne | Métadonnée de mode |
+| <code>mode</code> | chaîne | Mode applicatif ; la valeur <code>production</code> rend fatal au démarrage un <code>security.secret_key</code> vide ou trop court |
 | <code>env_files</code> | chaîne ou liste | Fichiers dotenv chargés avant l’expansion du YAML |
 
 ### Serveur
@@ -130,7 +130,7 @@ Le préfixe d’URL reste <code>/api</code>, même si un autre dossier est fourn
 
 | Champ | Type | Unité ou effet |
 | --- | --- | --- |
-| <code>security.secret_key</code> | chaîne | Secret de signature JWT |
+| <code>security.secret_key</code> | chaîne | Secret de signature JWT ; 32 octets minimum exigés |
 | <code>security.hash_cost</code> | entier | Coût bcrypt ; 12 si la valeur est 0 |
 | <code>security.token_expires</code> | entier | Durée de vie du token, en minutes |
 | <code>security.password_minimum_length</code> | entier | Longueur minimale |
@@ -139,7 +139,7 @@ Le préfixe d’URL reste <code>/api</code>, même si un autre dossier est fourn
 | <code>security.password_upper_case_required</code> | booléen | Exige une majuscule Unicode |
 | <code>security.password_lower_case_required</code> | booléen | Exige une minuscule Unicode |
 
-Utilisez un secret JWT long, aléatoire et non vide. La préversion ne valide pas sa robustesse.
+Utilisez un secret JWT long, aléatoire et non vide : <code>security.secret_key</code> est validé. Un secret vide ou de moins de 32 octets est journalisé en warning au démarrage hors production et refuse le démarrage lorsque <code>mode</code> vaut <code>production</code> ; les services de token échouent de leur côté tant qu’il n’est pas corrigé.
 
 ### CORS
 
@@ -218,7 +218,7 @@ Les fournisseurs sont des singletons chargés une seule fois. Une erreur de lect
 ## Limites actuelles
 
 - les clés YAML inconnues sont silencieusement ignorées ;
-- aucune validation globale n’empêche des valeurs vides ou incohérentes ;
+- aucune validation globale n’empêche des valeurs vides ou incohérentes, à l’exception de <code>security.secret_key</code>, contrôlé au démarrage ;
 - <code>server.cors</code> ne désactive pas CORS ;
 - <code>cors.max_age</code> est mal converti ;
 - <code>database.type</code> est ignoré et <code>sslmode=disable</code> est forcé ;
