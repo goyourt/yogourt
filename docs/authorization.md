@@ -484,14 +484,17 @@ Sans appel à `WithScope`, tout se résout dans `ScopeGlobal` — une applicatio
 `authorization/gormstore` fournit le provider SQL de production. Les tables (`authz_permissions`, `authz_roles`, `authz_role_permissions`, `authz_role_bindings`) sont créées par une migration SQL versionnée, embarquée dans le package et appliquée **explicitement** — jamais d'`AutoMigrate` :
 
 ```go
-db := providers.GetDB() // ou toute connexion GORM
+db, err := providers.GetDB() // ou toute connexion GORM
+if err != nil {
+	log.Fatal(err)
+}
 if err := gormstore.Migrate(ctx, db); err != nil {
 	log.Fatal(err)
 }
 store := gormstore.New(db)
 
 engine := authorization.NewEngine(authorization.WithProvider(store))
-routing.Initialize("api", routing.WithAuthorizer(engine))
+routing.Initialize(routing.WithAuthorizer(engine))
 ```
 
 **Aucune permission ne s'insère à la main.** Au démarrage, le framework enregistre automatiquement dans le store toutes les permissions déclarées par les routes (synchronisation additive : rien n'est jamais supprimé), et `GrantPermissions` enregistre de lui-même une permission encore inconnue. Il ne reste à administrer que les rôles et les bindings — à l'exécution, y compris depuis une interface web (voir [Administrer les rôles](#administrer-les-rôles-depuis-une-interface-web)) :
@@ -524,7 +527,13 @@ Une route d'admin n'a rien à recevoir du `main.go` : elle reconstruit le store 
 ```go
 // api/admin/roles/route.go — GET dérive roles.read, POST dérive roles.create
 func GET(c *gin.Context) {
-	store := gormstore.New(providers.GetDB())
+	db, err := providers.GetDB()
+	if err != nil {
+		routing.RespondServiceUnavailable(c)
+		return
+	}
+
+	store := gormstore.New(db)
 
 	roles, err := store.Roles(c.Request.Context())
 	if err != nil {

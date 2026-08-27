@@ -36,9 +36,14 @@ func GetAll[T interfaces.BaseInterface](objs *[]T, values map[string]any) error 
 }
 
 // GetAllPaginated behaves like GetAll with pagination. It returns GORM's
-// error.
+// error, or the connection error when the database is unreachable.
 func GetAllPaginated[T interfaces.BaseInterface](objs *[]T, values map[string]any, page int, pageSize int) error {
-	return SearchQuery(values, objs, page, pageSize).Distinct().Find(objs).Error
+	query, err := SearchQuery(values, objs, page, pageSize)
+	if err != nil {
+		return err
+	}
+
+	return query.Distinct().Find(objs).Error
 }
 
 // GetOneBy loads the first record matching values into obj. It returns
@@ -47,25 +52,42 @@ func GetOneBy(obj interfaces.BaseInterface, values map[string]any) error {
 	if obj.GetID() == 0 {
 		resetId(obj)
 	}
-	return JoinTables(values, &obj).First(obj).Error
+
+	query, err := JoinTables(values, &obj)
+	if err != nil {
+		return err
+	}
+
+	return query.First(obj).Error
 }
 
 func (dw DataWriter) Create(obj interfaces.BaseInterface) error {
 	resetId(obj)
 	obj.SetCreatedById(dw.CurrentUser)
 	obj.SetUpdatedById(dw.CurrentUser)
-	return providers.GetDB().Create(obj).Error
+
+	db, err := providers.GetDB()
+	if err != nil {
+		return err
+	}
+
+	return db.Create(obj).Error
 }
 
 func (dw DataWriter) Update(obj interfaces.BaseInterface) error {
 	obj.SetUpdatedById(dw.CurrentUser)
 	obj.SetUpdatedAt(time.Now())
 
-	if err := providers.GetDB().Model(obj).Where("uuid = ?", obj.GetUuid()).UpdateColumns(obj).Error; err != nil {
+	db, err := providers.GetDB()
+	if err != nil {
 		return err
 	}
 
-	return providers.GetDB().First(obj, "uuid = ?", obj.GetUuid()).Error
+	if err := db.Model(obj).Where("uuid = ?", obj.GetUuid()).UpdateColumns(obj).Error; err != nil {
+		return err
+	}
+
+	return db.First(obj, "uuid = ?", obj.GetUuid()).Error
 }
 
 func (dw DataWriter) Upsert(obj interfaces.BaseInterface, values map[string]any) error {
@@ -80,7 +102,12 @@ func (dw DataWriter) Upsert(obj interfaces.BaseInterface, values map[string]any)
 }
 
 func (dw DataWriter) Delete(obj interfaces.BaseInterface) error {
-	return dw.softDelete(providers.GetDB(), obj)
+	db, err := providers.GetDB()
+	if err != nil {
+		return err
+	}
+
+	return dw.softDelete(db, obj)
 }
 
 // softDelete soft deletes obj and really persists its deleted_by_id audit
@@ -119,15 +146,29 @@ func (dw DataWriter) softDelete(db *gorm.DB, obj interfaces.BaseInterface) error
 }
 
 func HardDelete(obj interfaces.BaseInterface) error {
-	return hardDelete(providers.GetDB(), obj)
+	db, err := providers.GetDB()
+	if err != nil {
+		return err
+	}
+
+	return hardDelete(db, obj)
 }
 
 func hardDelete(db *gorm.DB, obj interfaces.BaseInterface) error {
 	return db.Unscoped().Delete(obj).Error
 }
 
-func SearchQuery[T interfaces.BaseInterface](values map[string]any, objs *[]T, page int, pageSize int) *gorm.DB {
-	return Paginate(JoinTables(values, new(T)), page, pageSize)
+// SearchQuery builds the paginated query GetAllPaginated runs, and is the
+// entry point for the applications refining it with the GORM API. It returns
+// the connection error instead of a query when the database is unreachable:
+// there is no *gorm.DB to hang a failure on before a connection exists.
+func SearchQuery[T interfaces.BaseInterface](values map[string]any, objs *[]T, page int, pageSize int) (*gorm.DB, error) {
+	query, err := JoinTables(values, new(T))
+	if err != nil {
+		return nil, err
+	}
+
+	return Paginate(query, page, pageSize), nil
 }
 
 func Paginate(query *gorm.DB, page int, pageSize int) *gorm.DB {
