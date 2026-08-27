@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -71,15 +72,133 @@ func InitDB() *gorm.DB {
 		log.Fatalf("❌ %v", err)
 	}
 
-	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=disable", cfg.Database.Host, cfg.Database.User, cfg.Database.Password, cfg.Database.DB, cfg.Database.Port)
+	if err := validateSSLMode(cfg.Database.SSLMode); err != nil {
+		log.Fatalf("❌ %v", err)
+	}
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(buildDSN(cfg.Database)), &gorm.Config{})
 	if err != nil {
 		log.Fatalf("❌ Error while connecting database: %v", err)
 	}
 
+	if err := applyPoolSettings(db, cfg.Database.Pool); err != nil {
+		log.Fatalf("❌ %v", err)
+	}
+
 	fmt.Println("✅ Connexion with PostgreSQL")
 	return db
+}
+
+// defaultSSLMode keeps the connection in clear text when database.ssl_mode is
+// empty. The DSN hard-coded it, and turning TLS on for every application that
+// never wrote the key would break the ones talking to a server without it.
+const defaultSSLMode = "disable"
+
+// sslModes lists the libpq values database.ssl_mode accepts. An unknown mode
+// is refused at boot: libpq would reject the DSN anyway, with an error that
+// does not name the configuration key behind it.
+var sslModes = map[string]bool{
+	"disable":     true,
+	"allow":       true,
+	"prefer":      true,
+	"require":     true,
+	"verify-ca":   true,
+	"verify-full": true,
+}
+
+// validateSSLMode checks database.ssl_mode against the libpq modes.
+func validateSSLMode(sslMode string) error {
+	mode := strings.ToLower(strings.TrimSpace(sslMode))
+	if mode == "" || sslModes[mode] {
+		return nil
+	}
+
+	return fmt.Errorf("unsupported database.ssl_mode %q: use one of disable, allow, prefer, require, verify-ca, verify-full", sslMode)
+}
+
+// buildDSN assembles the libpq keyword/value connection string.
+//
+// Every value is quoted and escaped: the DSN used to be concatenated as it
+// came, so a password holding a space or a quote — the kind a generator
+// produces — silently truncated the DSN into a connection to something else.
+// Optional keywords are only written when they carry a value, which leaves
+// libpq its own defaults for the rest.
+func buildDSN(cfg DatabaseConfig) string {
+	sslMode := strings.ToLower(strings.TrimSpace(cfg.SSLMode))
+	if sslMode == "" {
+		sslMode = defaultSSLMode
+	}
+
+	// A port of 0 is an undeclared port, not a port to dial: leaving the
+	// keyword out lets libpq fall back to 5432.
+	port := ""
+	if cfg.Port > 0 {
+		port = strconv.Itoa(cfg.Port)
+	}
+
+	pairs := []struct{ keyword, value string }{
+		{"host", cfg.Host},
+		{"user", cfg.User},
+		{"password", cfg.Password},
+		{"dbname", cfg.DB},
+		{"port", port},
+		{"sslmode", sslMode},
+		{"sslrootcert", strings.TrimSpace(cfg.SSLRootCert)},
+		{"sslcert", strings.TrimSpace(cfg.SSLCert)},
+		{"sslkey", strings.TrimSpace(cfg.SSLKey)},
+		{"search_path", strings.TrimSpace(cfg.SearchPath)},
+	}
+
+	var dsn strings.Builder
+	for _, pair := range pairs {
+		if pair.value == "" {
+			continue
+		}
+		if dsn.Len() > 0 {
+			dsn.WriteByte(' ')
+		}
+		dsn.WriteString(pair.keyword)
+		dsn.WriteByte('=')
+		dsn.WriteString(quoteDSNValue(pair.value))
+	}
+
+	return dsn.String()
+}
+
+// quoteDSNValue writes a value the way libpq reads one: single quotes around
+// it, backslashes and single quotes escaped.
+func quoteDSNValue(value string) string {
+	escaped := strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(value)
+	return "'" + escaped + "'"
+}
+
+// applyPoolSettings bounds the database/sql pool behind GORM. A zero field
+// changes nothing, so a configuration that never declared a pool keeps the
+// defaults of database/sql.
+func applyPoolSettings(db *gorm.DB, pool DatabasePoolConfig) error {
+	if pool == (DatabasePoolConfig{}) {
+		return nil
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("Error reading the connection pool: %v", err)
+	}
+
+	if pool.MaxOpenConns != 0 {
+		sqlDB.SetMaxOpenConns(pool.MaxOpenConns)
+	}
+	if pool.MaxIdleConns != 0 {
+		sqlDB.SetMaxIdleConns(pool.MaxIdleConns)
+	}
+	if pool.ConnMaxLifetime != 0 {
+		sqlDB.SetConnMaxLifetime(pool.ConnMaxLifetime.Duration())
+	}
+	if pool.ConnMaxIdleTime != 0 {
+		sqlDB.SetConnMaxIdleTime(pool.ConnMaxIdleTime.Duration())
+	}
+
+	return nil
 }
 
 // validateDatabaseType checks database.type against the only driver this
