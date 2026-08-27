@@ -47,7 +47,10 @@ func CheckPassword(hashedPassword, password string) error {
 
 func GetPasswordFailureCount(username string) (int, error) {
 	ctx := context.Background()
-	cache := providers.GetCache()
+	cache, err := providers.GetCache()
+	if err != nil {
+		return 0, err
+	}
 	since := float64(time.Now().Add(-24 * time.Hour).Unix())
 
 	attempts, err := cache.ZRangeByScore(ctx, username, &redis.ZRangeBy{
@@ -60,14 +63,16 @@ func GetPasswordFailureCount(username string) (int, error) {
 
 func SavePasswordFailure(username string) error {
 	ctx := context.Background()
-	cache := providers.GetCache()
+	cache, err := providers.GetCache()
+	if err != nil {
+		return err
+	}
 	now := float64(time.Now().Unix())
 
-	err := cache.ZAdd(ctx, username, redis.Z{
+	return cache.ZAdd(ctx, username, redis.Z{
 		Score:  now,
 		Member: now,
 	}).Err()
-	return err
 }
 
 func IsPasswordValid(pwd string) bool {
