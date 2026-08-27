@@ -54,10 +54,12 @@ type MainConfig struct {
 		DB       int    `yaml:"db"`
 	} `yaml:"cache"`
 
+	// Paths carries the one path the runtime needs: RouteFolder, the folder
+	// of the route tree. model_folder, project_name and main_file used to be
+	// declared here and were read by nothing; they belong to the v0.5 CLI and
+	// are now reported by removedMainConfigKeys instead of being parsed into
+	// a field nobody reads.
 	Paths struct {
-		ModelFolder string `yaml:"model_folder"`
-		ProjectName string `yaml:"project_name"`
-		MainFile    string `yaml:"main_file"`
 		RouteFolder string `yaml:"route_folder"`
 	} `yaml:"paths"`
 
@@ -102,6 +104,8 @@ func loadConfig(filePath string, cfg any) error {
 	if err != nil {
 		return fmt.Errorf("Error parsing YAML : %v", err)
 	}
+
+	warnAboutDeadConfigKeys(filePath, []byte(replaced), cfg)
 
 	return nil
 }

@@ -36,9 +36,6 @@ cache:
   db: 0
 
 paths:
-  model_folder: "models"
-  project_name: "example"
-  main_file: "main.go"
   route_folder: "api"
 
 security:
