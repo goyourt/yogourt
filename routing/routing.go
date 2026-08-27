@@ -109,7 +109,38 @@ func Initialize(apiFolder string, options ...Option) {
 	applyGinMode(mainConfig.Mode)
 
 	r := gin.Default()
-	r.Use(cors.New(buildCORSConfig(mainConfig)))
+	if !corsEnabled(mainConfig) {
+		log.Print("CORS is off (server.cors: false): no CORS header, and preflight requests are not answered")
+		if corsSectionConfigured(mainConfig) {
+			log.Print("warning: server.cors is false, so the whole cors section of the configuration file is ignored")
+		}
+	} else if corsConfig, enabled := buildCORSConfig(mainConfig); enabled {
+		// cors.New panics on a configuration it rejects — an origin without
+		// a scheme, typically. Validating first turns that panic into a
+		// message that names the culprit.
+		if err := corsConfig.Validate(); err != nil {
+			log.Fatalf("Invalid cors section in the configuration file: %v", err)
+		}
+		if corsConfig.AllowAllOrigins && corsConfig.AllowCredentials {
+			log.Print("warning: cors.allow_credentials has no effect while cors.allow_all_origins is set; browsers refuse credentialed responses sent with 'Access-Control-Allow-Origin: *'. List the origins explicitly.")
+		}
+		r.Use(cors.New(corsConfig))
+	} else if mainConfig.Server.CORS != nil {
+		// server.cors: true asked for CORS, and the cors section declares no
+		// origin to allow: Gin would have nothing to answer with. An absent
+		// key stays silent — it asked for nothing.
+		log.Print("warning: server.cors is true but the cors section declares no origin; no CORS header is emitted")
+	}
+
+	if corsEnabled(mainConfig) {
+		// Preflight answers come before the route tree: a browser sends
+		// OPTIONS on paths that declare no OPTIONS handler. With CORS off
+		// there is nothing to preflight, so the catch-all goes away too and
+		// OPTIONS reaches the routes — or a 404.
+		r.OPTIONS("/*path", func(c *gin.Context) {
+			c.AbortWithStatus(204)
+		})
+	}
 
 	log.Printf("Serving the routes of %s under %s", apiFolder, displayPrefix(prefix))
 
@@ -192,6 +223,29 @@ func displayPrefix(prefix string) string {
 	return prefix
 }
 
+// corsEnabled reports whether CORS is handled at all: the middleware when the
+// cors section declares something, and the preflight catch-all. An absent
+// server.cors keeps both — the key was ignored until now, so a missing value
+// must not turn CORS off under an application that relies on it. Only an
+// explicit "cors: false" does.
+func corsEnabled(mainConfig *providers.MainConfig) bool {
+	return mainConfig.Server.CORS == nil || *mainConfig.Server.CORS
+}
+
+// corsSectionConfigured reports whether the cors section holds anything. With
+// CORS switched off that section becomes dead configuration, and saying so at
+// boot is cheaper than wondering why an allowed origin has no effect.
+func corsSectionConfigured(mainConfig *providers.MainConfig) bool {
+	config := mainConfig.CORS
+
+	return config.AllowAllOrigins ||
+		len(config.AllowedOrigins) > 0 ||
+		len(config.AllowedMethods) > 0 ||
+		len(config.AllowedHeaders) > 0 ||
+		config.AllowCredentials ||
+		config.MaxAge != 0
+}
+
 // applyGinMode aligns Gin's own mode with the application mode of the config:
 // mode "production" runs Gin in release mode, "test" in test mode, anything
 // else — including an empty value — in debug mode. Without this, mode had no
@@ -243,25 +297,51 @@ func validateSecretKeyAtBoot(secret, mode string) {
 	log.Printf("warning: %s; JWT features stay unusable until it is fixed, and production mode would refuse to start", problem)
 }
 
-func buildCORSConfig(mainConfig *providers.MainConfig) cors.Config {
+// buildCORSConfig translates the cors section into a Gin CORS configuration,
+// and reports whether the middleware should be installed at all.
+//
+// Gin's CORS middleware has no closed mode: cors.New panics on a
+// configuration declaring neither an origin nor AllowAllOrigins. That panic
+// used to be avoided by reading an empty section as AllowAllOrigins, so
+// forgetting the section opened the API to every origin. An empty section now
+// leaves the middleware out instead: no CORS header is emitted and browsers
+// keep refusing cross-origin calls, which is what a missing configuration
+// should mean.
+func buildCORSConfig(mainConfig *providers.MainConfig) (cors.Config, bool) {
 	config := mainConfig.CORS
-	allowAllOrigins := config.AllowAllOrigins
-	if len(config.AllowedOrigins) == 0 && !allowAllOrigins {
-		allowAllOrigins = true
+	if !config.AllowAllOrigins && len(config.AllowedOrigins) == 0 {
+		return cors.Config{}, false
 	}
+
 	allowedOrigins := config.AllowedOrigins
-	if allowAllOrigins {
+	if config.AllowAllOrigins {
+		// cors.Config.Validate rejects an explicit list alongside
+		// AllowAllOrigins, so the wider setting wins.
 		allowedOrigins = nil
 	}
 
+	// Empty lists reached Gin as-is, and a preflight answered without
+	// Access-Control-Allow-Methods/-Headers blocks every non-simple request.
+	// Gin's own defaults are a working starting point; note that they do not
+	// include Authorization, which an API behind JWT must list itself.
+	defaults := cors.DefaultConfig()
+	allowedMethods := config.AllowedMethods
+	if len(allowedMethods) == 0 {
+		allowedMethods = defaults.AllowMethods
+	}
+	allowedHeaders := config.AllowedHeaders
+	if len(allowedHeaders) == 0 {
+		allowedHeaders = defaults.AllowHeaders
+	}
+
 	return cors.Config{
-		AllowAllOrigins:  allowAllOrigins,
+		AllowAllOrigins:  config.AllowAllOrigins,
 		AllowOrigins:     allowedOrigins,
-		AllowMethods:     config.AllowedMethods,
-		AllowHeaders:     config.AllowedHeaders,
+		AllowMethods:     allowedMethods,
+		AllowHeaders:     allowedHeaders,
 		AllowCredentials: config.AllowCredentials,
 		MaxAge:           config.MaxAge.Duration(),
-	}
+	}, true
 }
 
 func listenAddress(host string, port int) string {
