@@ -17,7 +17,7 @@ func TestConfigReader(t *testing.T) {
 	if cfg.AppName != "test-app" {
 		t.Errorf("App name not found")
 	}
-	if cfg.Security.SecretKey != "secret_key" {
+	if cfg.Security.SecretKey != "secret_key_at_least_32_bytes_long!!" {
 		t.Errorf("Security config not found")
 	}
 	if len(cfg.EnvFiles) != 1 || cfg.EnvFiles[0] != "./configs/yogourt.env" {
@@ -26,11 +26,17 @@ func TestConfigReader(t *testing.T) {
 	if cfg.Database.Port != 1000 {
 		t.Errorf("Database config not found")
 	}
-	if cfg.Paths.ModelFolder != "model_folder" {
-		t.Errorf("Paths config not found")
+	if cfg.Paths.RouteFolder != "route_folder" {
+		t.Errorf("Route folder config not found")
 	}
-	if cfg.Server.CORS != true {
+	if cfg.Server.CORS == nil || !*cfg.Server.CORS {
 		t.Errorf("Server config not found")
+	}
+	if cfg.Server.BasePath != "/base_path" {
+		t.Errorf("Server base path not found")
+	}
+	if cfg.Server.BaseURL != "https://test-app.example.com" {
+		t.Errorf("Server base url not found")
 	}
 	if cfg.Cache.DB != 1000 {
 		t.Errorf("Cache config not found")

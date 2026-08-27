@@ -8,8 +8,8 @@ Les fournisseurs sont chargés à la première utilisation et conservés dans de
 
 ~~~go
 cfg := providers.GetMainConfig()
-db := providers.GetDB()
-cache := providers.GetCache()
+db, err := providers.GetDB()
+cache, err := providers.GetCache()
 files := providers.GetFileConfig()
 ~~~
 
@@ -17,7 +17,8 @@ Conséquences :
 
 - la configuration n’est pas rechargée pendant l’exécution ;
 - une erreur de fichier de configuration provoque un panic ;
-- une erreur d’ouverture PostgreSQL termine le processus ;
+- une erreur d’ouverture PostgreSQL est retournée par <code>GetDB</code> et ne termine plus le processus ; l’échec n’est pas mémorisé, l’appel suivant retente la connexion ;
+- une erreur de connexion Redis est renvoyée à l’appelant, et n’est pas mémorisée : l’appel suivant retente ;
 - les dépendances globales rendent les tests isolés plus difficiles.
 
 Voir le [guide de configuration](configuration.md) pour les chemins et champs exacts.
@@ -54,12 +55,13 @@ Les champs ID, UUID et audit sont stockés via des pointeurs. Utilisez leurs get
 
 ~~~go
 user := &models.User{}
-database.GetOneBy(user, map[string]any{
+err := database.GetOneBy(user, map[string]any{
 	"uuid": userUUID,
 })
-
-if user.GetID() == 0 {
-	// Introuvable, ou erreur SQL non exposée par l’API actuelle.
+if errors.Is(err, gorm.ErrRecordNotFound) {
+	// Introuvable.
+} else if err != nil {
+	// Panne SQL/réseau : distincte d'un « non trouvé ».
 }
 ~~~
 
@@ -70,7 +72,7 @@ Les méthodes de <code>interfaces.Base</code> ont des receivers pointeurs. Utili
 ~~~go
 var users []*models.User
 
-database.GetAll(&users, map[string]any{
+err := database.GetAll(&users, map[string]any{
 	"name":   database.Like("alb"),
 	"status": []string{"active", "invited"},
 })
@@ -80,7 +82,7 @@ Pagination :
 
 ~~~go
 var users []*models.User
-database.GetAllPaginated(&users, filters, 1, 25)
+err := database.GetAllPaginated(&users, filters, 1, 25)
 ~~~
 
 Une page ou une taille inférieure à 1 désactive la pagination.
@@ -101,14 +103,19 @@ Les combinaisons complexes avec <code>Or</code> sont également fragiles, car un
 ~~~go
 var users []*models.User
 
-err := database.
-	SearchQuery(map[string]any{"status": "active"}, &users, 1, 25).
+query, err := database.SearchQuery(map[string]any{"status": "active"}, &users, 1, 25)
+if err != nil {
+	// Base injoignable : il n’y a pas de requête à affiner.
+	return err
+}
+
+err = query.
 	Where("created_at >= ?", since).
 	Find(&users).
 	Error
 ~~~
 
-Contrairement à <code>GetOneBy</code>, <code>GetAll</code> et <code>GetAllPaginated</code>, cette forme permet de récupérer <code>Error</code>.
+<code>GetOneBy</code>, <code>GetAll</code> et <code>GetAllPaginated</code> retournent désormais l’erreur GORM (<code>gorm.ErrRecordNotFound</code> inclus pour <code>GetOneBy</code>) : une panne SQL n’est plus confondue avec un résultat vide. <code>SearchQuery</code> reste la porte d’entrée pour les requêtes GORM avancées ; elle retourne <code>(*gorm.DB, error)</code>, l’erreur étant celle de la connexion : tant qu’aucune connexion n’existe, il n’y a pas de <code>*gorm.DB</code> auquel accrocher l’échec. <code>JoinTables</code> suit la même signature.
 
 ## Écritures en base
 
@@ -118,8 +125,8 @@ Créez un writer à partir du contexte Gin pour renseigner les champs d’audit 
 writer := database.CreateDataWriter(c)
 
 user := &models.User{
-	Email: "alban@example.com",
-	Name:  "Alban",
+	Email: "dupont@example.com",
+	Name:  "Dupont",
 }
 
 if err := writer.Create(user); err != nil {
@@ -145,12 +152,19 @@ err = database.HardDelete(user)
 - <code>Delete</code> effectue une suppression douce et renseigne l’audit ;
 - <code>HardDelete</code> effectue une suppression définitive.
 
-Comme <code>GetOneBy</code> ne remonte pas les erreurs SQL, <code>Upsert</code> peut tenter un <code>Create</code> après un échec de lecture. Ne l’utilisez pas pour un chemin critique sans contrôle supplémentaire.
+<code>Delete</code> écrit deux instructions dans une seule transaction explicite : la colonne <code>deleted_by_id</code>, ciblée par UUID, puis la suppression douce GORM. Le callback GORM n’écrit que <code>deleted_at</code> et ne porte aucune colonne d’audit ; sans cette instruction dédiée, <code>deleted_by_id</code> restait NULL en base. Une ligne ne peut donc pas être supprimée sans auteur, ni attribuée sans être supprimée. Sans utilisateur authentifié, il n’y a pas de colonne d’audit à écrire et la suppression douce reste seule.
+
+<code>Upsert</code> distingue désormais les deux échecs de sa lecture : seule l’absence de ligne (<code>gorm.ErrRecordNotFound</code>) mène à un <code>Create</code>, toute autre erreur de <code>GetOneBy</code> est retournée telle quelle sans écriture. Une panne SQL ne se transforme donc plus en création silencieuse.
 
 Ces méthodes ne démarrent pas automatiquement une transaction commune. Dans un callback <code>Transaction</code>, utilisez directement le <code>*gorm.DB</code> reçu :
 
 ~~~go
-err := providers.GetDB().Transaction(func(tx *gorm.DB) error {
+db, err := providers.GetDB()
+if err != nil {
+	return err
+}
+
+err = db.Transaction(func(tx *gorm.DB) error {
 	return tx.Create(user).Error
 })
 ~~~
@@ -162,13 +176,15 @@ err := providers.GetDB().Transaction(func(tx *gorm.DB) error {
 Les helpers disponibles sont :
 
 ~~~go
-database.HydrateRelation(user, "Profile", user.Profile, user.ProfileID)
-err := database.UpsertRelations(c, user, []string{"Profile"})
+err := database.HydrateRelation(user, "Profile", user.Profile, user.ProfileID)
+err = database.UpsertRelations(c, user, []string{"Profile"})
 ~~~
+
+<code>HydrateRelation</code> et <code>HydrateManyToManyRelation</code> retournent l’erreur GORM ; les sites d’appel qui l’ignorent continuent de compiler.
 
 <code>UpsertRelations</code> recherche des méthodes <code>GetRelation</code> et <code>SetRelation</code> par réflexion. Il ne prend pas encore en charge l’upsert many-to-many.
 
-<code>HydrateManyToManyRelation</code> est public, mais sa garde actuelle retourne immédiatement pour un pointeur de slice non nil ; ne vous appuyez pas sur ce helper avant sa correction.
+<code>HydrateManyToManyRelation</code> attend un pointeur vers le champ slice à remplir et teste la <strong>slice</strong>, non le pointeur : une slice nil signifie « non chargée » et déclenche le préchargement, une slice allouée — même vide — est laissée telle quelle. La garde testait auparavant le pointeur, dont l'adresse n'est jamais nulle : le helper ne préchargeait donc jamais rien.
 
 ## Authentification
 
@@ -191,6 +207,8 @@ Le header doit avoir exactement la forme :
 ~~~text
 Authorization: Bearer <token>
 ~~~
+
+Un header absent ou mal formé est refusé avec un corps générique, comme le reste de la chaîne d’autorisation : <code>401</code> et <code>{"error":"Unauthorized"}</code>. La raison interne reste côté serveur, dans les logs. Il en va de même d’un token invalide, d’un claim <code>uuid</code> absent ou mal formé et d’un token valide dont le sujet n’a aucune ligne en base : ces quatre cas renvoient strictement la même réponse. Une panne de base pendant la recherche de l’utilisateur, elle, répond <code>503</code> : une indisponibilité n’est jamais maquillée en refus d’authentification.
 
 Récupération de l’utilisateur :
 
@@ -221,14 +239,14 @@ parsed, err := services.ValidToken(raw)
 uuid, err := services.GetClaim(parsed, "uuid")
 ~~~
 
-Limites de sécurité actuelles :
+Le secret de signature est validé : <code>services.ValidateSecretKey</code> refuse un secret vide ou de moins de 32 octets, et <code>CreateToken</code> comme <code>ValidToken</code> échouent alors sans produire ni accepter de token. <code>ValidToken</code> fixe aussi explicitement l’algorithme accepté (<code>HS256</code>), ce qui ferme la substitution d’algorithme. Le démarrage signale le problème avant la première requête : hors production un secret vide ou trop court n’est que journalisé en warning, en mode <code>production</code> il empêche le démarrage.
 
-- la robustesse et la présence du secret ne sont pas validées ;
-- <code>ValidToken</code> ne fixe pas explicitement la liste des algorithmes acceptés ;
+Limites de sécurité restantes :
+
 - aucun issuer ou audience n’est vérifié ;
 - l’expiration n’est pas explicitement exigée pour les tokens qui ne sont pas créés par Yogourt.
 
-Pour un usage sensible, encapsulez ces helpers avec une politique JWT stricte ou attendez leur durcissement avant la v2 stable.
+Pour un usage sensible, complétez ces helpers par une politique de claims (issuer, audience, expiration obligatoire) dans une couche applicative.
 
 ## Mots de passe
 
@@ -238,9 +256,46 @@ if !services.IsPasswordValid(password) {
 }
 
 hash, err := services.GetHashedPassword(password)
+
+err = services.CheckPassword(hash, password)
 ~~~
 
-<code>GetHashedPassword</code> utilise bcrypt. Le coût par défaut est 12 lorsque <code>security.hash_cost</code> vaut 0.
+<code>IsPasswordValid</code> vérifie la politique de complexité, pas un mot de passe existant. <code>GetHashedPassword</code> hache, <code>CheckPassword</code> compare : une application n’a donc pas à dépendre de bcrypt elle-même.
+
+Les contrôles sont appliqués dans cet ordre, chacun selon le champ de <code>security</code> qui le commande :
+
+| Champ | Ce qu’il exige |
+| --- | --- |
+| — | un mot de passe non vide, toujours |
+| <code>password_minimum_length</code> | <code>len(pwd)</code> au moins égal à la valeur — des octets, pas des runes |
+| <code>password_number_required</code> | au moins un chiffre Unicode (<code>unicode.IsDigit</code>) |
+| <code>password_special_char_required</code> | au moins une ponctuation ou un symbole Unicode |
+| <code>password_upper_case_required</code> | au moins une majuscule Unicode, accents compris |
+| <code>password_lower_case_required</code> | au moins une minuscule Unicode, accents compris |
+
+Les drapeaux sont indépendants et cumulatifs ; à <code>false</code> ou absents, le contrôle n’a pas lieu. Sans aucune clé, seule la chaîne vide est refusée : <code>"a"</code> est valide. Rien dans le framework n’appelle <code>IsPasswordValid</code> — c’est à la route d’inscription ou de changement de mot de passe de le faire.
+
+<code>GetHashedPassword</code> utilise bcrypt. Le coût par défaut est 12 lorsque <code>security.hash_cost</code> vaut 0. <code>CheckPassword</code> retourne <code>nil</code> quand le mot de passe correspond au hash.
+
+L’erreur retournée par <code>CheckPassword</code> ne doit **jamais** être renvoyée au client, même reformulée : elle distingue un mot de passe faux (<code>bcrypt.ErrMismatchedHashAndPassword</code>) d’un hash malformé, tronqué ou de version inconnue (<code>bcrypt.ErrHashTooShort</code>, <code>bcrypt.HashVersionTooNewError</code>…). Cette différence indique à un attaquant si le compte existe et comment son identifiant est stocké. Journalisez-la si besoin, et répondez un message générique unique :
+
+~~~go
+var user models.User
+if err := database.GetOneBy(&user, map[string]any{"username": req.Username}); err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		routing.RespondAndAbort(c, http.StatusUnauthorized, "Invalid credentials")
+		return
+	}
+	routing.RespondServiceUnavailable(c)
+	return
+}
+
+// Utilisateur inconnu et mot de passe faux répondent strictement la même chose.
+if err := services.CheckPassword(user.Password, req.Password); err != nil {
+	routing.RespondAndAbort(c, http.StatusUnauthorized, "Invalid credentials")
+	return
+}
+~~~
 
 Suivi Redis des échecs :
 
@@ -249,6 +304,7 @@ err := services.SavePasswordFailure(username)
 count, err := services.GetPasswordFailureCount(username)
 ~~~
 
+Les deux appels remontent l’erreur de <code>GetCache()</code> si Redis est injoignable.
 Le compteur regarde une fenêtre de 24 heures, mais les entrées anciennes ne sont actuellement ni supprimées ni associées à un TTL. Les appels utilisent aussi <code>context.Background()</code> et plusieurs échecs dans la même seconde peuvent partager le même membre Redis.
 
 ## Fichiers
@@ -315,11 +371,29 @@ Ce service ne doit pas être considéré comme un stockage de fichiers durci tan
 baseURL := services.GetBaseUrl()
 ~~~
 
-Si <code>server.host</code> est vide, le résultat est <code>http://localhost:&lt;port&gt;</code>. Sinon, la valeur du champ est retournée telle quelle. Comme le runtime interprète désormais ce champ comme une adresse d’écoute brute, <code>GetBaseUrl</code> peut donc retourner <code>127.0.0.1</code> sans schéma ni port ; encapsulez ce helper ou utilisez une configuration d’URL publique séparée jusqu’à l’alignement de son contrat.
+Le résultat porte toujours un schéma, et jamais de slash final.
+
+<code>server.base_url</code> est prioritaire quand il est renseigné : c’est la
+seule valeur qui décrit une adresse publique que le processus ne peut pas
+deviner — reverse proxy, terminaison TLS, port de conteneur remappé. Une
+valeur écrite sans schéma est servie en <code>http</code>.
+
+Sans <code>server.base_url</code>, l’URL est reconstruite depuis l’adresse
+d’écoute, <code>server.host</code> et <code>server.port</code> :
+
+| <code>server.host</code> | <code>server.port</code> | <code>GetBaseUrl()</code> |
+| --- | --- | --- |
+| vide | <code>8080</code> | <code>http://localhost:8080</code> |
+| <code>0.0.0.0</code> ou <code>::</code> | <code>8080</code> | <code>http://localhost:8080</code> |
+| <code>127.0.0.1</code> | <code>8080</code> | <code>http://127.0.0.1:8080</code> |
+| <code>::1</code> | <code>8080</code> | <code>http://[::1]:8080</code> |
+
+Un hôte vide ou non spécifié devient <code>localhost</code> : <code>0.0.0.0</code>
+demande au socket d’écouter toutes les interfaces et n’est pas une adresse
+qu’un client peut composer.
 
 ## Limites transverses
 
-- plusieurs helpers de lecture DB ne retournent aucune erreur ;
 - les providers globaux ne prennent pas de <code>context.Context</code> ;
 - les échecs de configuration utilisent panic ou <code>log.Fatal</code> ;
 - les comportements de sécurité, de stockage et de concurrence doivent être renforcés avant un usage critique.

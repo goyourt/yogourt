@@ -29,9 +29,28 @@ func GetHashedPassword(pwd string) (string, error) {
 	return string(bytes), nil
 }
 
+// CheckPassword compares a bcrypt hash produced by GetHashedPassword with a
+// clear-text password. It returns nil when they match, and bcrypt's error
+// otherwise.
+//
+// The returned error MUST NEVER be forwarded to the client, not even as a
+// message: it distinguishes a wrong password
+// (bcrypt.ErrMismatchedHashAndPassword) from a malformed, truncated or
+// wrongly-versioned hash (bcrypt.ErrHashTooShort,
+// bcrypt.HashVersionTooNewError, bcrypt.InvalidCostError…). Exposing that
+// difference tells an attacker whether the account exists and how its
+// credential is stored. Log it server-side if useful, and answer the caller a
+// single generic message such as "Invalid credentials" for every failure.
+func CheckPassword(hashedPassword, password string) error {
+	return bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
+}
+
 func GetPasswordFailureCount(username string) (int, error) {
 	ctx := context.Background()
-	cache := providers.GetCache()
+	cache, err := providers.GetCache()
+	if err != nil {
+		return 0, err
+	}
 	since := float64(time.Now().Add(-24 * time.Hour).Unix())
 
 	attempts, err := cache.ZRangeByScore(ctx, username, &redis.ZRangeBy{
@@ -44,19 +63,24 @@ func GetPasswordFailureCount(username string) (int, error) {
 
 func SavePasswordFailure(username string) error {
 	ctx := context.Background()
-	cache := providers.GetCache()
+	cache, err := providers.GetCache()
+	if err != nil {
+		return err
+	}
 	now := float64(time.Now().Unix())
 
-	err := cache.ZAdd(ctx, username, redis.Z{
+	return cache.ZAdd(ctx, username, redis.Z{
 		Score:  now,
 		Member: now,
 	}).Err()
-	return err
 }
 
 func IsPasswordValid(pwd string) bool {
 	cfg := providers.GetMainConfig().Security
 
+	if len(pwd) == 0 {
+		return false
+	}
 	if len(pwd) < cfg.PasswordMinimumLength {
 		return false
 	}

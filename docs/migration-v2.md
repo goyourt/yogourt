@@ -51,7 +51,106 @@ paths:
   route_folder: "api"
 ~~~
 
-Si le fichier a été généré par le CLI v0.5, remplacez <code>dbname</code> par <code>db</code> et <code>api_folder</code> par <code>route_folder</code>. Il s’agit d’une correction du template CLI, pas d’un changement entre les contrats du framework v1.1 et v2.
+Si le fichier a été généré par le CLI v0.5, remplacez <code>dbname</code> par <code>db</code> et <code>api_folder</code> par <code>route_folder</code>. Il s’agit d’une correction du template CLI, pas d’un changement entre les contrats du framework v1.1 et v2. Un oubli se voit maintenant au démarrage : le chargement de la configuration nomme la clé et son remplaçant.
+
+<pre><code>⚠️  configs/yogourt.yaml: "paths.api_folder" was renamed to "paths.route_folder" — the value is ignored
+</code></pre>
+
+Depuis la v2, <code>paths.route_folder</code> n’est plus décoratif : c’est le dossier de routes chargé par <code>routing.Initialize</code>, et la seule source de ce dossier. En revanche <code>paths.model_folder</code>, <code>paths.project_name</code> et <code>paths.main_file</code> ont quitté le contrat runtime — le framework ne les a jamais lus. Vous pouvez les supprimer ; le démarrage le rappelle.
+
+<strong>Rupture de compilation</strong> : <code>routing.Initialize</code> ne prend
+plus de dossier en argument. Déplacez celui de votre appel dans le fichier de
+configuration :
+
+~~~go
+routing.Initialize("api", routing.WithAuthorizer(engine))  // v1
+routing.Initialize(routing.WithAuthorizer(engine))         // v2
+~~~
+
+~~~yaml
+paths:
+  route_folder: "api"
+~~~
+
+Le dossier scanné est un réglage du déploiement : le déclarer à la fois dans le
+code et dans la configuration permettait à un programme de contredire son
+propre <code>yogourt.yaml</code>. Sans <code>route_folder</code>, le démarrage
+échoue en nommant la clé.
+
+<strong>Base de données</strong> : le DSN n’impose plus <code>sslmode=disable</code>.
+C’est désormais la valeur par défaut de <code>database.ssl_mode</code>, donc une
+configuration inchangée ouvre la même connexion qu’avant, et un déploiement qui
+exige TLS n’a plus à adapter le fournisseur :
+
+~~~yaml
+database:
+  ssl_mode: "verify-full"
+  ssl_root_cert: "/etc/ssl/certs/db-ca.crt"
+  search_path: "app,public"
+  pool:
+    max_open_conns: 25
+    conn_max_lifetime: 30m
+~~~
+
+Les valeurs du DSN sont aussi échappées : un mot de passe contenant une espace
+ou une apostrophe était jusque-là concaténé tel quel et tronquait la chaîne de
+connexion.
+
+<strong>Rupture de compilation</strong> : un échec de connexion n’arrête plus le
+processus, il est retourné. Les signatures suivantes changent :
+
+| Avant | Après |
+| --- | --- |
+| <code>providers.GetDB() *gorm.DB</code> | <code>providers.GetDB() (*gorm.DB, error)</code> |
+| <code>providers.InitDB() *gorm.DB</code> | <code>providers.InitDB() (*gorm.DB, error)</code> |
+| <code>database.SearchQuery(...) *gorm.DB</code> | <code>database.SearchQuery(...) (*gorm.DB, error)</code> |
+| <code>database.JoinTables(...) *gorm.DB</code> | <code>database.JoinTables(...) (*gorm.DB, error)</code> |
+
+~~~go
+db := providers.GetDB()                    // v1 : log.Fatalf, le processus sort
+
+db, err := providers.GetDB()               // v2
+if err != nil {
+	routing.RespondServiceUnavailable(c)
+	return
+}
+~~~
+
+<code>GetOneBy</code>, <code>GetAll</code>, <code>GetAllPaginated</code>, les
+méthodes de <code>DataWriter</code>, <code>HardDelete</code> et les helpers
+<code>Hydrate*</code> gardent leur signature : ils retournent maintenant
+l’erreur de connexion là où ils retournaient déjà l’erreur GORM. Une base
+indisponible fait donc échouer les requêtes qui en ont besoin, au lieu
+d’emporter le processus depuis la première d’entre elles. La connexion n’étant
+mémorisée qu’une fois ouverte, une base qui revient est reprise sans
+redémarrage.
+
+<pre><code>⚠️  configs/yogourt.yaml: "paths.model_folder" is not a runtime setting (only the v0.5 CLI reads it) — delete it
+</code></pre>
+
+Deux autres champs ont pris un sens : <code>database.type</code> est contrôlé (seul PostgreSQL est fourni, une autre valeur arrête le démarrage) et <code>server.base_path</code> règle le préfixe HTTP, jusque-là figé à <code>/api</code>.
+
+<strong>Changement de comportement</strong> : <code>services.GetBaseUrl</code> ne
+retourne plus <code>server.host</code> tel quel. <code>server.host</code> est une
+adresse d’écoute — avec <code>host: "0.0.0.0"</code>, l’ancien helper retournait
+<code>0.0.0.0</code>, sans schéma ni port. L’URL est désormais reconstruite avec
+son schéma et son port (<code>http://localhost:8080</code> pour un hôte vide ou
+non spécifié), et la nouvelle clé <code>server.base_url</code> porte l’URL
+publique quand l’application est derrière un reverse proxy, une terminaison TLS
+ou un port de conteneur remappé :
+
+~~~yaml
+server:
+  host: "0.0.0.0"
+  port: 8080
+  base_url: "https://api.example.com"
+~~~
+
+Les applications qui contournaient le helper en concaténant elles-mêmes un
+schéma et un port doivent retirer ce contournement, sous peine d’obtenir une
+URL doublée.
+
+<strong>Rupture de compilation possible</strong> : le code qui lisait <code>cfg.Paths.ModelFolder</code>, <code>cfg.Paths.ProjectName</code> ou <code>cfg.Paths.MainFile</code> ne compile plus, et <code>cfg.Server.CORS</code> est désormais un <code>*bool</code> (l’absence de clé et <code>false</code> devaient cesser de se confondre).
 
 Ajoutez une configuration CORS avec au moins une origine :
 
@@ -86,8 +185,11 @@ files: {}
 Consultez la [référence complète](configuration.md). En particulier :
 
 - <code>server.host</code> est une adresse d’écoute brute, sans schéma ni port ;
-- <code>server.cors</code> n’active ni ne désactive le middleware ;
+- <code>server.cors: false</code> coupe tout le traitement CORS ; la clé absente laisse la section <code>cors</code> décider ;
 - <code>cors.allow_all_origins</code> est transmis à Gin et gagne sur une liste d’origines simultanée ;
+- une section <code>cors</code> sans origine n’installe plus le middleware : la v0.5 activait alors toutes les origines. Un frontend d’une autre origine cesse de fonctionner tant que <code>allowed_origins</code> n’est pas rempli ;
+- <code>allowed_headers</code> vide ne prend plus seulement les défauts de Gin : <code>Authorization</code> y est ajouté, sans quoi le login JWT du framework ne pouvait pas fonctionner depuis une autre origine. Une liste écrite reste utilisée telle quelle ;
+- <code>cors.max_age</code> n’est plus multiplié par <code>time.Hour</code> et accepte un nombre de secondes : <code>max_age: 12ns</code>, seul contournement de l’ancienne conversion, vaut désormais 12 nanosecondes — écrivez <code>12h</code> ;
 - le fournisseur DB reste PostgreSQL et force <code>sslmode=disable</code>.
 
 ## 3. Mettre à jour les providers
@@ -267,7 +369,7 @@ La v2 ajoute notamment :
 - la clé de filtre <code>orderBy</code> ;
 - <code>UpsertRelations</code>.
 
-Ces ajouts ne corrigent pas encore la gestion des erreurs des lectures : <code>GetOneBy</code>, <code>GetAll</code> et <code>GetAllPaginated</code> ne retournent toujours aucune erreur SQL.
+Les lectures retournent désormais l’erreur GORM : <code>GetOneBy</code> (y compris <code>gorm.ErrRecordNotFound</code>), <code>GetAll</code>, <code>GetAllPaginated</code>, <code>HydrateRelation</code> et <code>HydrateManyToManyRelation</code>. L’ajout d’une valeur de retour ne casse pas les sites d’appel existants, mais vérifiez ces erreurs sur vos chemins critiques.
 
 Pendant la migration :
 
@@ -278,12 +380,12 @@ Pendant la migration :
 
 ## 10. Réviser JWT et fichiers
 
-La v2 crée toujours des JWT HS256 avec <code>uuid</code> et <code>exp</code>, mais la validation ne restreint pas encore explicitement l’algorithme et ne vérifie ni issuer ni audience.
+La v2 crée toujours des JWT HS256 avec <code>uuid</code> et <code>exp</code>. La validation restreint désormais explicitement l’algorithme à <code>HS256</code>, valide le format du claim <code>uuid</code> et exige un secret de 32 octets minimum, contrôlé dès le démarrage (warning hors production, refus de démarrer en mode <code>production</code>). Elle ne vérifie toujours ni issuer ni audience, et n’exige pas explicitement la présence de <code>exp</code> sur un token qu’elle n’a pas émis.
 
 Avant mise en production :
 
-- configurez un secret non vide, long et aléatoire ;
-- imposez l’algorithme et les claims attendus dans une couche applicative ;
+- configurez un secret aléatoire de 32 octets au moins, sous peine de refus de démarrage ;
+- imposez les claims attendus (issuer, audience, expiration obligatoire) dans une couche applicative ;
 - vérifiez les types MIME et extensions des uploads ;
 - gérez les erreurs d’écriture de fichiers ;
 - ajoutez un TTL et une purge au suivi Redis des échecs de mot de passe.
@@ -315,8 +417,7 @@ Une migration n’est complète que lorsque le binaire et tous les plugins ont �
 - choix final du chemin de module v2 ;
 - publication du CLI et de son workflow build/dev/start ;
 - validation stricte de la configuration ;
-- prise en compte de <code>server.cors</code> et correction de <code>cors.max_age</code> ;
 - stratégie de portabilité en dehors des plugins Go ;
 - retours d’erreur DB et fichiers ;
-- durcissement JWT ;
+- durcissement JWT restant : issuer, audience et expiration obligatoire ;
 - détection des collisions de routes.

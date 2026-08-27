@@ -12,6 +12,7 @@ Yogourt est un framework Go pour construire des API avec Gin, un routage basé s
 | [Configuration](docs/configuration.md) | Fichiers YAML, variables d’environnement et limites runtime |
 | [Routage](docs/routing.md) | Routes fichiers, handlers, paramètres, middlewares et plugins |
 | [Services](docs/services.md) | Modèles, base de données, authentification, mots de passe et fichiers |
+| [Autorisation](docs/authorization.md) | RBAC, ABAC, permissions par route, scopes et statuts HTTP |
 | [Migration vers la v2](docs/migration-v2.md) | Changements incompatibles et checklist de migration |
 
 ## Prérequis
@@ -55,6 +56,9 @@ mode: "development"
 
 server:
   port: 8080
+
+paths:
+  route_folder: "api"
 
 cors:
   allowed_origins:
@@ -121,7 +125,7 @@ package main
 import "github.com/goyourt/yogourt/routing"
 
 func main() {
-	routing.Initialize("api")
+	routing.Initialize()
 }
 ~~~
 
@@ -178,6 +182,8 @@ func GET(c *yogourt.Context, params Params) {
 func main() {}
 ~~~
 
+Le dossier scanné vient de <code>paths.route_folder</code> : <code>routing.Initialize()</code> ne prend pas de dossier en argument. Le préfixe HTTP vaut <code>/api</code> par défaut et se règle par <code>routing.WithPrefix("/v1")</code> ou par <code>server.base_path</code> dans la configuration ; il ne dépend pas du nom du dossier scanné.
+
 La syntaxe de dossier <code>id_</code> est recommandée. Les formes historiques <code>[id]</code> et <code>_id</code> restent reconnues. Le [guide de routage](docs/routing.md) décrit les signatures, conversions et règles de middleware.
 
 ## CLI
@@ -196,13 +202,20 @@ go test -race ./...
 go vet ./...
 ~~~
 
+Un test d’intégration compile de vrais plugins (<code>go build -buildmode=plugin</code>) et fait tourner le chargeur du framework dessus : ouverture des <code>.so</code>, extraction des symboles, enregistrement des routes, permissions dérivées et déclarées. Il est inclus dans <code>go test ./...</code> et coûte quelques secondes par plugin, beaucoup plus au premier appel puisque toutes les dépendances doivent être recompilées pour ce mode de construction :
+
+~~~sh
+go test ./routing -run TestPluginRoutesEndToEnd -v   # ce test seul
+go test -short ./...                                 # le saute
+~~~
+
+Sur une plateforme sans support des plugins Go, le test se saute de lui-même avec un message explicite.
+
 ## Limites connues de la préversion
 
 - les plugins Go ne sont pas portables vers Windows et sont sensibles à toute différence de toolchain ou de dépendances ;
 - le runtime vérifie uniquement l’existence des fichiers <code>.so</code>, pas leur fraîcheur ;
-- le préfixe HTTP est toujours <code>/api</code>, quel que soit l’argument de <code>routing.Initialize</code> ;
 - une collision méthode/route n’est pas détectée avant l’enregistrement et peut provoquer un panic Gin ;
-- <code>server.cors</code> est encore ignoré et <code>cors.max_age</code> est mal converti ;
-- le fournisseur de base de données est PostgreSQL uniquement et force <code>sslmode=disable</code>.
+- le fournisseur de base de données est PostgreSQL uniquement — <code>database.type</code> refuse toute autre valeur au démarrage. TLS, chemin de recherche des schémas et bornes du pool se règlent par <code>database.ssl_mode</code>, <code>database.search_path</code> et <code>database.pool</code> ; sans ces clés la connexion reste en clair, comme avant.
 
 Ces contraintes sont détaillées dans les guides afin de ne pas les confondre avec des garanties de la future version stable.

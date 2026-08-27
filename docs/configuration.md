@@ -19,6 +19,7 @@ server:
   port: 8080
   host: "127.0.0.1"
   cors: true
+  base_path: "/api"
 
 database:
   type: "postgres"
@@ -35,9 +36,6 @@ cache:
   db: 0
 
 paths:
-  model_folder: "models"
-  project_name: "example"
-  main_file: "main.go"
   route_folder: "api"
 
 security:
@@ -68,7 +66,7 @@ cors:
   allow_all_origins: false
 ~~~
 
-Le champ <code>cors.max_age</code> est volontairement omis. L’implémentation multiplie directement la valeur YAML décodée par <code>time.Hour</code> : une valeur numérique <code>1</code> produit une heure, tandis qu’une durée textuelle déjà exprimée comme <code>1h</code> serait multipliée une seconde fois.
+Le champ <code>cors.max_age</code> accepte un nombre de secondes (<code>3600</code>) ou une durée (<code>12h</code>, <code>300ms</code>). Omis, il vaut <code>0</code> et l’en-tête <code>Access-Control-Max-Age</code> n’est pas envoyé.
 
 ## Référence des champs
 
@@ -77,8 +75,8 @@ Le champ <code>cors.max_age</code> est volontairement omis. L’implémentation 
 | Champ | Type | Comportement actuel |
 | --- | --- | --- |
 | <code>app_name</code> | chaîne | Métadonnée applicative |
-| <code>version</code> | chaîne | Métadonnée de version |
-| <code>mode</code> | chaîne | Métadonnée de mode |
+| <code>version</code> | chaîne | Version journalisée au démarrage, avec <code>app_name</code> |
+| <code>mode</code> | chaîne | Mode applicatif. <code>production</code> rend fatal au démarrage un <code>security.secret_key</code> vide ou trop court et met Gin en mode release ; <code>test</code> met Gin en mode test ; toute autre valeur le laisse en debug. Une variable d’environnement <code>GIN_MODE</code> explicite reste prioritaire |
 | <code>env_files</code> | chaîne ou liste | Fichiers dotenv chargés avant l’expansion du YAML |
 
 ### Serveur
@@ -87,22 +85,103 @@ Le champ <code>cors.max_age</code> est volontairement omis. L’implémentation 
 | --- | --- | --- |
 | <code>server.port</code> | entier | Port d’écoute |
 | <code>server.host</code> | chaîne | Adresse d’écoute ; <code>0.0.0.0</code> si la valeur est vide |
-| <code>server.cors</code> | booléen | Analysé mais non utilisé ; le middleware CORS est toujours installé |
+| <code>server.cors</code> | booléen | Interrupteur CORS. <code>false</code> retire le middleware et la réponse au préflight ; clé absente ou <code>true</code> laisse la section <code>cors</code> décider |
+| <code>server.base_path</code> | chaîne | Préfixe HTTP de toutes les routes ; <code>/api</code> si la valeur est vide |
+| <code>server.base_url</code> | chaîne | URL publique retournée par <code>services.GetBaseUrl</code> ; reconstruite depuis <code>server.host</code> et <code>server.port</code> si la valeur est vide |
 
 <code>server.host</code> est un nom d’hôte ou une adresse IP sans schéma ni port, par exemple <code>127.0.0.1</code>, <code>localhost</code> ou <code>::1</code>. Le port vient de <code>server.port</code>.
+
+<code>server.host</code> est une adresse d’écoute, pas une adresse joignable :
+<code>0.0.0.0</code> demande au socket d’accepter toutes les interfaces et ne dit
+rien de l’URL par laquelle un client atteint l’application.
+<code>server.base_url</code> porte donc cette URL publique, la seule que le
+processus ne peut pas deviner — reverse proxy, terminaison TLS, port de
+conteneur remappé :
+
+~~~yaml
+server:
+  port: 8080
+  host: "0.0.0.0"
+  base_url: "https://api.example.com"
+~~~
+
+Sans <code>server.base_url</code>, <code>services.GetBaseUrl</code> reconstruit
+l’URL depuis l’adresse d’écoute : schéma <code>http</code>, port inclus, et un
+hôte vide ou non spécifié (<code>0.0.0.0</code>, <code>::</code>) remplacé par
+<code>localhost</code>. Une valeur écrite sans schéma est servie en
+<code>http</code>, et le slash final est retiré.
+
+<code>server.cors: false</code> coupe tout le traitement CORS : aucun en-tête, et le
+<code>OPTIONS /*path</code> qui répondait <code>204</code> à chaque préflight n’est plus
+enregistré — les requêtes <code>OPTIONS</code> atteignent alors les routes, ou un 404.
+Une section <code>cors</code> renseignée en même temps est signalée au démarrage, parce
+qu’elle ne sert plus à rien. Une clé absente conserve le comportement
+historique : c’est la section <code>cors</code> qui décide.
+
+<code>server.base_path</code> déplace toutes les URLs publiées. Il accepte plusieurs
+segments (<code>/api/v2</code>), tolère la forme sans slash (<code>v1</code>) et la barre
+oblique finale, et <code>/</code> sert l’arborescence à la racine
+(<code>api/users/route.go</code> répond alors sur <code>/users</code>). Un paramètre Gin
+ou une espace dans le préfixe arrête le démarrage. <code>routing.WithPrefix</code>
+l’emporte sur ce champ, voir le [guide de routage](routing.md).
 
 ### Base de données
 
 | Champ | Type | Comportement actuel |
 | --- | --- | --- |
-| <code>database.type</code> | chaîne | Analysé mais ignoré |
+| <code>database.type</code> | chaîne | Contrôlé au démarrage : <code>postgres</code>, <code>postgresql</code> ou vide ; toute autre valeur arrête le processus |
 | <code>database.user</code> | chaîne | Utilisateur PostgreSQL |
 | <code>database.password</code> | chaîne | Mot de passe PostgreSQL |
 | <code>database.host</code> | chaîne | Hôte PostgreSQL |
 | <code>database.port</code> | entier | Port PostgreSQL |
 | <code>database.db</code> | chaîne | Nom de base ; remplace l’ancienne clé <code>dbname</code> |
+| <code>database.ssl_mode</code> | chaîne | Mode TLS libpq : <code>disable</code>, <code>allow</code>, <code>prefer</code>, <code>require</code>, <code>verify-ca</code>, <code>verify-full</code> ; <code>disable</code> si la valeur est vide. Toute autre valeur arrête le processus |
+| <code>database.ssl_root_cert</code> | chaîne | Chemin du certificat d’autorité vérifié par <code>verify-ca</code> et <code>verify-full</code> |
+| <code>database.ssl_cert</code> | chaîne | Chemin du certificat client |
+| <code>database.ssl_key</code> | chaîne | Chemin de la clé privée du certificat client |
+| <code>database.search_path</code> | chaîne | Chemin de recherche des schémas de chaque session ; défaut du serveur si la valeur est vide |
+| <code>database.pool.max_open_conns</code> | entier | Connexions ouvertes simultanées ; illimité si <code>0</code> |
+| <code>database.pool.max_idle_conns</code> | entier | Connexions inactives conservées ; défaut de <code>database/sql</code> (2) si <code>0</code> |
+| <code>database.pool.conn_max_lifetime</code> | durée | Âge maximal d’une connexion ; sans limite si <code>0</code> |
+| <code>database.pool.conn_max_idle_time</code> | durée | Durée d’inactivité maximale d’une connexion ; sans limite si <code>0</code> |
 
-Le fournisseur actuel utilise uniquement PostgreSQL et ajoute <code>sslmode=disable</code> au DSN. Il faut donc l’adapter avant un déploiement qui exige TLS.
+Le fournisseur ne construit qu’une connexion PostgreSQL. Le DSN n’impose plus
+<code>sslmode=disable</code> : c’est la valeur par défaut de
+<code>database.ssl_mode</code>, celle d’une configuration qui n’a jamais écrit la
+clé, et un déploiement exigeant TLS la remplace.
+
+~~~yaml
+database:
+  type: "postgres"
+  host: "${DB_HOST}"
+  port: 5432
+  user: "${DB_USER}"
+  password: "${DB_PASSWORD}"
+  db: "${DB_NAME}"
+  ssl_mode: "verify-full"
+  ssl_root_cert: "/etc/ssl/certs/db-ca.crt"
+  search_path: "app,public"
+  pool:
+    max_open_conns: 25
+    max_idle_conns: 5
+    conn_max_lifetime: 30m
+    conn_max_idle_time: 5m
+~~~
+
+Les mots-clés facultatifs ne sont écrits dans le DSN que lorsqu’ils portent une
+valeur, ce qui laisse à libpq ses propres défauts — notamment ses emplacements
+habituels de certificats. Les valeurs sont échappées : un mot de passe
+contenant une espace ou une apostrophe ne tronque plus la chaîne de connexion.
+
+Les deux durées du pool s’écrivent en chaîne (<code>30m</code>, <code>90s</code>)
+ou en nombre de secondes (<code>90</code>). Un champ à zéro conserve le défaut de
+<code>database/sql</code>.
+
+Un échec de connexion est retourné, jamais fatal :
+<code>providers.GetDB()</code> et <code>providers.InitDB()</code> rendent
+<code>(*gorm.DB, error)</code>. La connexion n’est mémorisée qu’une fois
+ouverte, donc une base indisponible au premier appel ne condamne pas le
+processus : l’appel suivant retente.
 
 ### Cache
 
@@ -113,46 +192,93 @@ Le fournisseur actuel utilise uniquement PostgreSQL et ajoute <code>sslmode=disa
 | <code>cache.password</code> | chaîne | Mot de passe Redis |
 | <code>cache.db</code> | entier | Index de base Redis |
 
-Le client est créé à la première utilisation de <code>providers.GetCache()</code>.
+Le client est créé à la première utilisation de <code>providers.GetCache()</code>, qui
+n'est mémorisé qu'après un <code>PING</code> réussi. Une instance injoignable est donc
+signalée par une erreur au lieu d'être découverte à la première opération de cache,
+et l'appel suivant retente la connexion. La connexion et le <code>PING</code> sont bornés
+à 2 secondes.
 
 ### Chemins
 
 | Champ | Type | Comportement actuel |
 | --- | --- | --- |
-| <code>paths.model_folder</code> | chaîne | Analysé pour les outils et conventions de projet |
-| <code>paths.project_name</code> | chaîne | Analysé pour les outils et conventions de projet |
-| <code>paths.main_file</code> | chaîne | Analysé pour les outils et conventions de projet |
-| <code>paths.route_folder</code> | chaîne | Analysé, mais <code>routing.Initialize</code> utilise son propre argument |
+| <code>paths.route_folder</code> | chaîne | Dossier du plan de routes chargé par <code>routing.Initialize</code> |
 
-Le préfixe d’URL reste <code>/api</code>, même si un autre dossier est fourni à <code>routing.Initialize</code>.
+<code>paths.route_folder</code> est la seule source du dossier de routes :
+<code>routing.Initialize</code> ne prend pas de dossier en argument, parce que le
+dossier scanné par un déploiement est un réglage et que le déclarer à deux
+endroits permettait à un programme de contredire son propre fichier de
+configuration. Sans <code>route_folder</code>, le démarrage échoue en nommant la
+clé.
+
+Le dossier scanné ne change jamais l’URL publiée : le préfixe HTTP est réglé
+séparément par <code>server.base_path</code> ou <code>routing.WithPrefix</code>.
+
+<code>model_folder</code>, <code>project_name</code> et <code>main_file</code> ne sont plus
+des champs de la configuration : ils appartiennent au CLI v0.5 et le runtime ne
+les a jamais lus. Les écrire produit un avertissement (ci-dessous) ; les
+supprimer ne change rien au comportement du serveur.
+
+### Clés sans effet
+
+Toute clé absente des tableaux ci-dessus est ignorée par le parseur YAML. Depuis
+la v2, le chargement de la configuration les signale au lieu de les avaler en
+silence :
+
+<pre><code>⚠️  configs/yogourt.yaml: "paths.api_folder" was renamed to "paths.route_folder" — the value is ignored
+⚠️  configs/yogourt.yaml: "paths.model_folder" is not a runtime setting (only the v0.5 CLI reads it) — delete it
+⚠️  configs/yogourt.yaml: unknown key "tpyo" — the value is ignored
+</code></pre>
+
+Trois familles d’avertissements :
+
+- une clé <strong>inconnue</strong> (faute de frappe, section inventée) ;
+- une clé <strong>renommée</strong> depuis les gabarits du CLI v0.5 —
+  <code>paths.api_folder</code> → <code>paths.route_folder</code>,
+  <code>database.dbname</code> → <code>database.db</code> — dont le remplaçant est
+  nommé dans le message ;
+- une clé <strong>retirée</strong> du contrat runtime :
+  <code>paths.model_folder</code>, <code>paths.project_name</code>,
+  <code>paths.main_file</code>.
+
+Tous les champs que la configuration déclare encore sont lus par le framework :
+il n’y a plus de clé « analysée mais ignorée ». <code>configs/files.yaml</code> passe
+par le même contrôle, mais seules les clés inconnues y sont signalées : les
+listes de clés renommées et retirées ne concernent que <code>yogourt.yaml</code>.
+
+Ces avertissements ne bloquent jamais le démarrage : une clé inconnue a toujours
+été tolérée ici, en faire une erreur casserait des configurations qui démarrent
+aujourd’hui.
 
 ### Sécurité
 
 | Champ | Type | Unité ou effet |
 | --- | --- | --- |
-| <code>security.secret_key</code> | chaîne | Secret de signature JWT |
+| <code>security.secret_key</code> | chaîne | Secret de signature JWT ; 32 octets minimum exigés |
 | <code>security.hash_cost</code> | entier | Coût bcrypt ; 12 si la valeur est 0 |
 | <code>security.token_expires</code> | entier | Durée de vie du token, en minutes |
-| <code>security.password_minimum_length</code> | entier | Longueur minimale |
+| <code>security.password_minimum_length</code> | entier | Longueur minimale, en octets ; <code>0</code> n’exige aucune longueur |
 | <code>security.password_special_char_required</code> | booléen | Exige un caractère Unicode de ponctuation ou symbole |
 | <code>security.password_number_required</code> | booléen | Exige un chiffre Unicode |
 | <code>security.password_upper_case_required</code> | booléen | Exige une majuscule Unicode |
 | <code>security.password_lower_case_required</code> | booléen | Exige une minuscule Unicode |
 
-Utilisez un secret JWT long, aléatoire et non vide. La préversion ne valide pas sa robustesse.
+Ces cinq champs ne sont lus que par <code>services.IsPasswordValid</code>, que le framework n’appelle jamais : la route d’inscription ou de changement de mot de passe doit l’appeler elle-même. Les drapeaux sont indépendants et cumulatifs ; à <code>false</code> ou absents, le contrôle correspondant n’a pas lieu. Un mot de passe vide est toujours refusé, mais sans aucune de ces clés c’est le seul cas rejeté.
+
+Utilisez un secret JWT long, aléatoire et non vide : <code>security.secret_key</code> est validé. Un secret vide ou de moins de 32 octets est journalisé en warning au démarrage hors production et refuse le démarrage lorsque <code>mode</code> vaut <code>production</code> ; les services de token échouent de leur côté tant qu’il n’est pas corrigé.
 
 ### CORS
 
 | Champ | Type | Comportement actuel |
 | --- | --- | --- |
-| <code>cors.allowed_origins</code> | liste | Origines transmises à Gin CORS |
-| <code>cors.allowed_methods</code> | liste | Méthodes autorisées |
-| <code>cors.allowed_headers</code> | liste | En-têtes autorisés |
-| <code>cors.allow_credentials</code> | booléen | Autorise les credentials |
-| <code>cors.allow_all_origins</code> | booléen | Active <code>AllowAllOrigins</code> dans Gin CORS |
-| <code>cors.max_age</code> | nombre ou durée | Valeur décodée multipliée par <code>time.Hour</code> ; à omettre avant correction |
+| <code>cors.allowed_origins</code> | liste | Liste blanche d’origines, schéma obligatoire ; alimente <code>Access-Control-Allow-Origin</code> |
+| <code>cors.allowed_methods</code> | liste | Méthodes autorisées ; les valeurs par défaut de Gin si la liste est vide |
+| <code>cors.allowed_headers</code> | liste | <code>Access-Control-Allow-Headers</code> ; si la liste est vide, les valeurs par défaut de Gin plus <code>Authorization</code>. Une liste écrite est reprise telle quelle |
+| <code>cors.allow_credentials</code> | booléen | <code>true</code> émet <code>Access-Control-Allow-Credentials: true</code> : le navigateur peut joindre cookies et en-têtes d’authentification à une requête d’origine croisée. Sinon l’en-tête n’est pas émis et le navigateur retire ces éléments |
+| <code>cors.allow_all_origins</code> | booléen | <code>true</code> répond <code>Access-Control-Allow-Origin: *</code> à toute origine et ignore <code>allowed_origins</code> ; suffit à lui seul à installer le middleware |
+| <code>cors.max_age</code> | secondes ou durée | <code>Access-Control-Max-Age</code> : durée de mise en cache du préflight ; un nombre nu est lu en secondes, <code>0</code> n’émet pas l’en-tête |
 
-Si <code>allowed_origins</code> est vide, le runtime active automatiquement toutes les origines. Si <code>allow_all_origins</code> vaut <code>true</code>, ce mode gagne et une éventuelle liste est ignorée afin d’éviter une configuration Gin conflictuelle. Pour les applications avec cookies ou credentials, utilisez une liste d’origines explicite plutôt que le mode global.
+Toute cette section est subordonnée à <code>server.cors</code> : avec <code>server.cors: false</code>, elle est ignorée et le démarrage le signale. Si <code>allowed_origins</code> est vide et <code>allow_all_origins</code> faux, le middleware CORS n’est pas installé : aucune en-tête CORS n’est émise et le navigateur refuse les appels d’origine croisée. Si <code>allow_all_origins</code> vaut <code>true</code>, ce mode gagne et une éventuelle liste est ignorée afin d’éviter une configuration Gin conflictuelle. Pour les applications avec cookies ou credentials, utilisez une liste d’origines explicite : un navigateur rejette une réponse credentialed portant <code>Access-Control-Allow-Origin: *</code>, et le démarrage l’indique par un avertissement.
 
 ## Variables d’environnement
 
@@ -217,9 +343,6 @@ Les fournisseurs sont des singletons chargés une seule fois. Une erreur de lect
 
 ## Limites actuelles
 
-- les clés YAML inconnues sont silencieusement ignorées ;
-- aucune validation globale n’empêche des valeurs vides ou incohérentes ;
-- <code>server.cors</code> ne désactive pas CORS ;
-- <code>cors.max_age</code> est mal converti ;
-- <code>database.type</code> est ignoré et <code>sslmode=disable</code> est forcé ;
-- les erreurs de connexion PostgreSQL terminent le processus via <code>log.Fatal</code>.
+- les clés YAML inconnues sont signalées au démarrage, mais jamais fatales : la valeur reste ignorée ;
+- aucune validation globale n’empêche des valeurs vides ou incohérentes, à l’exception de <code>security.secret_key</code>, <code>database.type</code>, <code>database.ssl_mode</code>, <code>server.base_path</code> et <code>cors.max_age</code>, contrôlés au démarrage ;
+- rien n’est rechargé à chaud, et les chemins des deux fichiers sont codés en dur.
