@@ -35,6 +35,9 @@ func TestConfigReader(t *testing.T) {
 	if cfg.Server.BasePath != "/base_path" {
 		t.Errorf("Server base path not found")
 	}
+	if cfg.Server.BaseURL != "https://test-app.example.com" {
+		t.Errorf("Server base url not found")
+	}
 	if cfg.Cache.DB != 1000 {
 		t.Errorf("Cache config not found")
 	}
