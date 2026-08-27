@@ -26,7 +26,45 @@ api/
 
 Le nom du fichier n’entre pas dans l’URL. Tous les fichiers <code>.go</code> sont chargés, sauf ceux terminés par <code>_test.go</code>.
 
-Le préfixe HTTP est actuellement fixé à <code>/api</code>. Par exemple, <code>routing.Initialize("routes")</code> scanne le dossier <code>routes</code>, mais continue de publier les URLs sous <code>/api</code>.
+Le dossier scanné et le préfixe HTTP sont deux réglages distincts. <code>route_folder: "routes"</code> scanne le dossier <code>routes</code> et publie sous <code>/api</code>, le préfixe par défaut.
+
+## Préfixe HTTP
+
+Le préfixe vient, dans cet ordre : de l’option <code>routing.WithPrefix</code>, du champ <code>server.base_path</code> de la configuration, puis de la valeur par défaut <code>/api</code>.
+
+~~~go
+routing.Initialize(routing.WithPrefix("/v1"))   // /v1/users
+routing.Initialize(routing.WithPrefix("/"))     // /users
+routing.Initialize()                            // server.base_path, sinon /api
+~~~
+
+| Écriture | Préfixe retenu |
+| --- | --- |
+| <code>"/v1"</code>, <code>"v1"</code>, <code>"/v1/"</code> | <code>/v1</code> |
+| <code>"/api/v2"</code> | <code>/api/v2</code> |
+| <code>"/"</code> | racine : <code>api/users/route.go</code> répond sur <code>/users</code> |
+
+Un <code>base_path</code> vide ou absent n’est pas la racine, c’est le défaut <code>/api</code> : servir à la racine se demande explicitement avec <code>/</code>.
+
+Un préfixe contenant un paramètre Gin (<code>:id</code>, <code>*path</code>) ou une espace arrête le démarrage, en nommant sa source — l’option ou le champ de configuration.
+
+Le préfixe désigne un point de montage, pas une ressource : il est exclu des permissions dérivées par convention. Sous <code>/v1</code>, <code>api/users/route.go</code> dérive toujours <code>users.read</code>, jamais <code>v1.read</code>.
+
+## Dossier des routes
+
+Le dossier scanné vient du seul <code>paths.route_folder</code> du fichier de
+configuration :
+
+~~~yaml
+paths:
+  route_folder: "api"
+~~~
+
+<code>Initialize</code> ne prend pas de dossier en argument : le dossier d’un
+déploiement est un réglage, et le déclarer à deux endroits permettait à un
+programme de contredire son propre <code>yogourt.yaml</code>. Sans
+<code>route_folder</code>, le démarrage échoue en nommant la clé. Voir le
+[guide de configuration](configuration.md).
 
 ## Segments dynamiques
 

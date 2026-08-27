@@ -24,7 +24,7 @@ func TestDerivePermissionResourceIsTheLastStaticSegment(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		got, ok := derivePermission(c.route, c.method)
+		got, ok := derivePermission("/api", c.route, c.method)
 		if !ok {
 			t.Errorf("derivePermission(%q, %q) could not derive a permission", c.route, c.method)
 
@@ -51,8 +51,37 @@ func TestDerivePermissionImpossibleCases(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		if got, ok := derivePermission(c.route, c.method); ok {
+		if got, ok := derivePermission("/api", c.route, c.method); ok {
 			t.Errorf("%s: derivePermission(%q, %q) = %q, want no derivation", c.name, c.route, c.method, got)
 		}
+	}
+}
+
+func TestDerivePermissionIgnoresTheConfiguredPrefix(t *testing.T) {
+	cases := []struct {
+		name   string
+		prefix string
+		route  string
+		method string
+		want   string
+		ok     bool
+	}{
+		{"custom prefix keeps the resource", "/v1", "/v1/users", "GET", "users.read", true},
+		{"multi segment prefix", "/api/v2", "/api/v2/orders/:id", "PATCH", "orders.update", true},
+		{"the prefix itself derives nothing", "/v1", "/v1", "GET", "", false},
+		{"root prefix keeps the resource", "", "/users", "DELETE", "users.delete", true},
+		{"root route derives nothing", "", "/", "GET", "", false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, ok := derivePermission(c.prefix, c.route, c.method)
+			if ok != c.ok {
+				t.Fatalf("derivePermission(%q, %q, %q) ok = %v, want %v (got %q)", c.prefix, c.route, c.method, ok, c.ok, got)
+			}
+			if got != c.want {
+				t.Errorf("derivePermission(%q, %q, %q) = %q, want %q", c.prefix, c.route, c.method, got, c.want)
+			}
+		})
 	}
 }

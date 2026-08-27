@@ -35,7 +35,7 @@ func TestValidateGroupMissingSymbolDerivesEveryMethod(t *testing.T) {
 		{file: "users/index.go", methods: []string{"GET", "POST"}},
 	}
 
-	effective, violations := validateRoutePermissionGroup("/api/users", files, nil)
+	effective, violations := validateRoutePermissionGroup("/api", "/api/users", files, nil)
 
 	if len(violations) != 0 {
 		t.Fatalf("expected no violation for a folder relying on the convention, got %v", violations)
@@ -53,7 +53,7 @@ func TestValidateGroupNonDerivableMethodStillRequiresADeclaration(t *testing.T) 
 		{file: "index.go", methods: []string{"GET"}},
 	}
 
-	_, violations := validateRoutePermissionGroup("/api", files, nil)
+	_, violations := validateRoutePermissionGroup("/api", "/api", files, nil)
 
 	if len(violations) != 1 {
 		t.Fatalf("expected 1 violation, got %d: %v", len(violations), violations)
@@ -71,7 +71,7 @@ func TestValidateGroupUnknownHTTPMethodIsNotDerivable(t *testing.T) {
 		{file: "users/index.go", methods: []string{"GET", "HEAD"}},
 	}
 
-	effective, violations := validateRoutePermissionGroup("/api/users", files, nil)
+	effective, violations := validateRoutePermissionGroup("/api", "/api/users", files, nil)
 
 	if len(violations) != 1 {
 		t.Fatalf("expected 1 violation, got %d: %v", len(violations), violations)
@@ -91,7 +91,7 @@ func TestValidateGroupNonDerivableMethodCoveredByADeclaration(t *testing.T) {
 		}},
 	}
 
-	effective, violations := validateRoutePermissionGroup("/api", files, nil)
+	effective, violations := validateRoutePermissionGroup("/api", "/api", files, nil)
 
 	if len(violations) != 0 {
 		t.Fatalf("expected no violation, got %v", violations)
@@ -107,7 +107,7 @@ func TestValidateGroupUtilityFolderWithoutHandlers(t *testing.T) {
 	// forced to declare a Permissions symbol.
 	files := []routeFile{{file: "shared/helpers.go"}}
 
-	effective, violations := validateRoutePermissionGroup("/api/shared", files, nil)
+	effective, violations := validateRoutePermissionGroup("/api", "/api/shared", files, nil)
 
 	if len(violations) != 0 {
 		t.Fatalf("expected no violation for a handler-less folder, got %v", violations)
@@ -128,7 +128,7 @@ func TestValidateGroupSingleDeclarationCoversAllFiles(t *testing.T) {
 		{file: "users/test.go", methods: []string{"POST"}},
 	}
 
-	effective, violations := validateRoutePermissionGroup("/api/users", files, nil)
+	effective, violations := validateRoutePermissionGroup("/api", "/api/users", files, nil)
 
 	if len(violations) != 0 {
 		t.Fatalf("expected no violation for a single covering declaration, got %v", violations)
@@ -145,7 +145,7 @@ func TestValidateGroupMultipleDeclarationsRefused(t *testing.T) {
 		{file: "users/test.go", methods: []string{"POST"}, hasSymbol: true, permissions: map[string]string{"POST": "user.create"}},
 	}
 
-	effective, violations := validateRoutePermissionGroup("/api/users", files, nil)
+	effective, violations := validateRoutePermissionGroup("/api", "/api/users", files, nil)
 
 	if len(violations) != 1 {
 		t.Fatalf("expected 1 violation, got %d: %v", len(violations), violations)
@@ -167,7 +167,7 @@ func TestValidateGroupPartialOverrideDerivesTheRest(t *testing.T) {
 		{file: "users/test.go", methods: []string{"POST"}},
 	}
 
-	effective, violations := validateRoutePermissionGroup("/api/users", files, nil)
+	effective, violations := validateRoutePermissionGroup("/api", "/api/users", files, nil)
 
 	if len(violations) != 0 {
 		t.Fatalf("expected no violation for a partial override, got %v", violations)
@@ -185,7 +185,7 @@ func TestValidateGroupOverrideCanBePublic(t *testing.T) {
 		}},
 	}
 
-	effective, violations := validateRoutePermissionGroup("/api/users", files, []authorization.Action{"users.create"})
+	effective, violations := validateRoutePermissionGroup("/api", "/api/users", files, []authorization.Action{"users.create"})
 
 	if len(violations) != 0 {
 		t.Fatalf("expected no violation, got %v", violations)
@@ -204,7 +204,7 @@ func TestValidateGroupOrphanEntry(t *testing.T) {
 		}},
 	}
 
-	effective, violations := validateRoutePermissionGroup("/api/users", files, nil)
+	effective, violations := validateRoutePermissionGroup("/api", "/api/users", files, nil)
 
 	if len(violations) != 1 {
 		t.Fatalf("expected 1 violation, got %d: %v", len(violations), violations)
@@ -222,7 +222,7 @@ func TestValidateGroupEmptyPermission(t *testing.T) {
 		{file: "users/index.go", methods: []string{"GET"}, hasSymbol: true, permissions: map[string]string{"GET": ""}},
 	}
 
-	effective, violations := validateRoutePermissionGroup("/api/users", files, nil)
+	effective, violations := validateRoutePermissionGroup("/api", "/api/users", files, nil)
 
 	if len(violations) != 1 {
 		t.Fatalf("expected 1 violation, got %d: %v", len(violations), violations)
@@ -244,7 +244,7 @@ func TestValidateGroupUnknownDeclaredPermission(t *testing.T) {
 	}
 	known := []authorization.Action{"article.read"}
 
-	_, violations := validateRoutePermissionGroup("/api/articles", files, known)
+	_, violations := validateRoutePermissionGroup("/api", "/api/articles", files, known)
 
 	if len(violations) != 1 {
 		t.Fatalf("expected 1 violation, got %d: %v", len(violations), violations)
@@ -262,7 +262,7 @@ func TestValidateGroupUnknownDerivedPermission(t *testing.T) {
 	}
 	known := []authorization.Action{"articles.read"}
 
-	effective, violations := validateRoutePermissionGroup("/api/articles", files, known)
+	effective, violations := validateRoutePermissionGroup("/api", "/api/articles", files, known)
 
 	if len(violations) != 1 {
 		t.Fatalf("expected 1 violation, got %d: %v", len(violations), violations)
@@ -281,7 +281,7 @@ func TestValidateGroupNoStrictModeWithoutKnownList(t *testing.T) {
 		{file: "articles/index.go", methods: []string{"GET"}, hasSymbol: true, permissions: map[string]string{"GET": "anything.goes"}},
 	}
 
-	effective, violations := validateRoutePermissionGroup("/api/articles", files, nil)
+	effective, violations := validateRoutePermissionGroup("/api", "/api/articles", files, nil)
 
 	if len(violations) != 0 {
 		t.Fatalf("expected no violation without a known permission list, got %v", violations)
@@ -298,7 +298,7 @@ func TestValidateGroupCollectsAllViolations(t *testing.T) {
 	}
 	known := []authorization.Action{"article.read"}
 
-	effective, violations := validateRoutePermissionGroup("/api/articles", files, known)
+	effective, violations := validateRoutePermissionGroup("/api", "/api/articles", files, known)
 
 	// GET has an unknown override, POST derives an unknown permission, HEAD
 	// cannot be derived at all and PUT is an orphan entry.

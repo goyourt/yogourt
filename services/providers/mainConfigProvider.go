@@ -33,6 +33,9 @@ type MainConfig struct {
 		Port int    `yaml:"port"`
 		CORS bool   `yaml:"cors"`
 		Host string `yaml:"host"`
+		// BasePath is the HTTP prefix every route is published under. Empty
+		// falls back to routing.DefaultPrefix ("/api").
+		BasePath string `yaml:"base_path"`
 	} `yaml:"server"`
 
 	Database struct {
