@@ -8,8 +8,8 @@ Les fournisseurs sont chargés à la première utilisation et conservés dans de
 
 ~~~go
 cfg := providers.GetMainConfig()
-db := providers.GetDB()
-cache := providers.GetCache()
+db, err := providers.GetDB()
+cache, err := providers.GetCache()
 files := providers.GetFileConfig()
 ~~~
 
@@ -17,7 +17,8 @@ Conséquences :
 
 - la configuration n’est pas rechargée pendant l’exécution ;
 - une erreur de fichier de configuration provoque un panic ;
-- une erreur d’ouverture PostgreSQL termine le processus ;
+- une erreur d’ouverture PostgreSQL est retournée par <code>GetDB</code> et ne termine plus le processus ; l’échec n’est pas mémorisé, l’appel suivant retente la connexion ;
+- une erreur de connexion Redis est renvoyée à l’appelant, et n’est pas mémorisée : l’appel suivant retente ;
 - les dépendances globales rendent les tests isolés plus difficiles.
 
 Voir le [guide de configuration](configuration.md) pour les chemins et champs exacts.
@@ -102,14 +103,19 @@ Les combinaisons complexes avec <code>Or</code> sont également fragiles, car un
 ~~~go
 var users []*models.User
 
-err := database.
-	SearchQuery(map[string]any{"status": "active"}, &users, 1, 25).
+query, err := database.SearchQuery(map[string]any{"status": "active"}, &users, 1, 25)
+if err != nil {
+	// Base injoignable : il n’y a pas de requête à affiner.
+	return err
+}
+
+err = query.
 	Where("created_at >= ?", since).
 	Find(&users).
 	Error
 ~~~
 
-<code>GetOneBy</code>, <code>GetAll</code> et <code>GetAllPaginated</code> retournent désormais l’erreur GORM (<code>gorm.ErrRecordNotFound</code> inclus pour <code>GetOneBy</code>) : une panne SQL n’est plus confondue avec un résultat vide. <code>SearchQuery</code> reste la porte d’entrée pour les requêtes GORM avancées.
+<code>GetOneBy</code>, <code>GetAll</code> et <code>GetAllPaginated</code> retournent désormais l’erreur GORM (<code>gorm.ErrRecordNotFound</code> inclus pour <code>GetOneBy</code>) : une panne SQL n’est plus confondue avec un résultat vide. <code>SearchQuery</code> reste la porte d’entrée pour les requêtes GORM avancées ; elle retourne <code>(*gorm.DB, error)</code>, l’erreur étant celle de la connexion : tant qu’aucune connexion n’existe, il n’y a pas de <code>*gorm.DB</code> auquel accrocher l’échec. <code>JoinTables</code> suit la même signature.
 
 ## Écritures en base
 
@@ -153,7 +159,12 @@ err = database.HardDelete(user)
 Ces méthodes ne démarrent pas automatiquement une transaction commune. Dans un callback <code>Transaction</code>, utilisez directement le <code>*gorm.DB</code> reçu :
 
 ~~~go
-err := providers.GetDB().Transaction(func(tx *gorm.DB) error {
+db, err := providers.GetDB()
+if err != nil {
+	return err
+}
+
+err = db.Transaction(func(tx *gorm.DB) error {
 	return tx.Create(user).Error
 })
 ~~~

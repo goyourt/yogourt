@@ -18,8 +18,17 @@ const likePatern = "LIKE"
 const orPatern = "OR"
 const orderByPatern = "orderBy"
 
-func JoinTables[T interfaces.BaseInterface](values map[string]any, objType *T) *gorm.DB {
-	query := providers.GetDB().Model(*objType)
+// JoinTables builds the query behind the read helpers: joins, conditions and
+// ordering derived from values. It returns the connection error when the
+// database is unreachable, since a query cannot be built without a
+// connection.
+func JoinTables[T interfaces.BaseInterface](values map[string]any, objType *T) (*gorm.DB, error) {
+	db, err := providers.GetDB()
+	if err != nil {
+		return nil, err
+	}
+
+	query := db.Model(*objType)
 	query.Statement.Parse(query.Statement.Model)
 	joinedTables := []string{dairy.ToTitle(query.Statement.Table)}
 	for key, value := range values {
@@ -42,7 +51,7 @@ func JoinTables[T interfaces.BaseInterface](values map[string]any, objType *T) *
 		query = addConditionPatern(query, key, value)
 	}
 
-	return query.Preload(clause.Associations)
+	return query.Preload(clause.Associations), nil
 }
 
 // HydrateRelation preloads the relation when it has not been loaded yet. It
@@ -52,7 +61,12 @@ func HydrateRelation(obj interfaces.BaseInterface, table string, relation interf
 		return nil
 	}
 
-	return providers.GetDB().Preload(table).Find(obj, obj.GetID()).Error
+	db, err := providers.GetDB()
+	if err != nil {
+		return err
+	}
+
+	return db.Preload(table).Find(obj, obj.GetID()).Error
 }
 
 // HydrateManyToManyRelation preloads a many-to-many relation that has not been
@@ -69,7 +83,12 @@ func HydrateManyToManyRelation[T interfaces.BaseInterface](obj interfaces.BaseIn
 		return nil
 	}
 
-	return providers.GetDB().Preload(table).Find(obj, obj.GetID()).Error
+	db, err := providers.GetDB()
+	if err != nil {
+		return err
+	}
+
+	return db.Preload(table).Find(obj, obj.GetID()).Error
 }
 
 func UpsertRelations(c *gin.Context, obj interfaces.BaseInterface, relations []string) error {
