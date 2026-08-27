@@ -271,3 +271,15 @@ func TestCORSSectionConfiguredDetectsADeadSection(t *testing.T) {
 		t.Error("a section declaring only max_age must be reported as configured")
 	}
 }
+
+func TestBootBannerUsesAppNameAndVersion(t *testing.T) {
+	mainConfig := &providers.MainConfig{AppName: "demo", Version: "1.2.3", Mode: "production"}
+	if got, want := bootBanner(mainConfig), "Starting demo 1.2.3 (mode: production)"; got != want {
+		t.Errorf("bootBanner() = %q, want %q", got, want)
+	}
+
+	empty := bootBanner(&providers.MainConfig{})
+	if !strings.Contains(empty, "yogourt application") || !strings.Contains(empty, "debug") {
+		t.Errorf("bootBanner() of an empty config = %q, want a fallback name and the effective Gin mode", empty)
+	}
+}
