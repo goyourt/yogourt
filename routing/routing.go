@@ -108,6 +108,8 @@ func Initialize(apiFolder string, options ...Option) {
 	// setting it afterwards would leave a log line contradicting reality.
 	applyGinMode(mainConfig.Mode)
 
+	log.Print(bootBanner(mainConfig))
+
 	r := gin.Default()
 	if !corsEnabled(mainConfig) {
 		log.Print("CORS is off (server.cors: false): no CORS header, and preflight requests are not answered")
@@ -244,6 +246,26 @@ func corsSectionConfigured(mainConfig *providers.MainConfig) bool {
 		len(config.AllowedHeaders) > 0 ||
 		config.AllowCredentials ||
 		config.MaxAge != 0
+}
+
+// bootBanner names the application the process serves. app_name and version
+// were parsed and read by nothing; telling which build is running is the least
+// a deployment can expect from them.
+func bootBanner(mainConfig *providers.MainConfig) string {
+	name := strings.TrimSpace(mainConfig.AppName)
+	if name == "" {
+		name = "yogourt application"
+	}
+	if version := strings.TrimSpace(mainConfig.Version); version != "" {
+		name += " " + version
+	}
+
+	mode := strings.TrimSpace(mainConfig.Mode)
+	if mode == "" {
+		mode = "unset, Gin runs in debug"
+	}
+
+	return fmt.Sprintf("Starting %s (mode: %s)", name, mode)
 }
 
 // applyGinMode aligns Gin's own mode with the application mode of the config:
