@@ -78,6 +78,9 @@ func SavePasswordFailure(username string) error {
 func IsPasswordValid(pwd string) bool {
 	cfg := providers.GetMainConfig().Security
 
+	if len(pwd) == 0 {
+		return false
+	}
 	if len(pwd) < cfg.PasswordMinimumLength {
 		return false
 	}

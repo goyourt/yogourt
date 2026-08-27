@@ -108,3 +108,19 @@ func TestCheckPasswordMalformedHash(t *testing.T) {
 		}
 	}
 }
+
+// The test configuration declares no password policy, which is the state of
+// every configuration that never wrote the security keys: IsPasswordValid
+// then rejects the empty password and nothing else. The flags are documented
+// as cumulative and off by default — this locks the "off" half.
+func TestIsPasswordValidWithoutPolicy(t *testing.T) {
+	if services.IsPasswordValid("") {
+		t.Error("an empty password must be refused whatever the policy declares")
+	}
+
+	for _, pwd := range []string{"a", "password", "É"} {
+		if !services.IsPasswordValid(pwd) {
+			t.Errorf("IsPasswordValid(%q) = false, want true: no policy key is set", pwd)
+		}
+	}
+}
