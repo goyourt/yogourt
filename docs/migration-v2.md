@@ -86,8 +86,11 @@ files: {}
 Consultez la [référence complète](configuration.md). En particulier :
 
 - <code>server.host</code> est une adresse d’écoute brute, sans schéma ni port ;
-- <code>server.cors</code> n’active ni ne désactive le middleware ;
+- <code>server.cors: false</code> coupe tout le traitement CORS ; la clé absente laisse la section <code>cors</code> décider ;
 - <code>cors.allow_all_origins</code> est transmis à Gin et gagne sur une liste d’origines simultanée ;
+- une section <code>cors</code> sans origine n’installe plus le middleware : la v0.5 activait alors toutes les origines. Un frontend d’une autre origine cesse de fonctionner tant que <code>allowed_origins</code> n’est pas rempli ;
+- <code>allowed_headers</code> vide ne prend plus seulement les défauts de Gin : <code>Authorization</code> y est ajouté, sans quoi le login JWT du framework ne pouvait pas fonctionner depuis une autre origine. Une liste écrite reste utilisée telle quelle ;
+- <code>cors.max_age</code> n’est plus multiplié par <code>time.Hour</code> et accepte un nombre de secondes : <code>max_age: 12ns</code>, seul contournement de l’ancienne conversion, vaut désormais 12 nanosecondes — écrivez <code>12h</code> ;
 - le fournisseur DB reste PostgreSQL et force <code>sslmode=disable</code>.
 
 ## 3. Mettre à jour les providers

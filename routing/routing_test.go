@@ -3,20 +3,24 @@ package routing
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/goyourt/yogourt/services/providers"
 )
 
-func TestBuildCORSConfigDefaultsToAllowAllOrigins(t *testing.T) {
+// A configuration file without a cors section used to be read as "allow
+// every origin": the framework opened the API precisely when nobody had said
+// anything about it. Nothing is installed now.
+func TestBuildCORSConfigDisabledWhenNoOriginConfigured(t *testing.T) {
 	mainConfig := &providers.MainConfig{}
 
-	config := buildCORSConfig(mainConfig)
+	config, enabled := buildCORSConfig(mainConfig)
 
-	if !config.AllowAllOrigins {
-		t.Fatal("expected CORS to allow all origins when no origin is configured")
+	if enabled {
+		t.Fatalf("expected no CORS middleware without configuration, got %#v", config)
 	}
-	if err := config.Validate(); err != nil {
-		t.Fatalf("expected valid default CORS config, got %v", err)
+	if config.AllowAllOrigins {
+		t.Error("an unconfigured cors section must never enable all origins")
 	}
 }
 
@@ -24,10 +28,13 @@ func TestBuildCORSConfigPreservesConfiguredOrigins(t *testing.T) {
 	mainConfig := &providers.MainConfig{}
 	mainConfig.CORS.AllowedOrigins = []string{"https://app.example.com"}
 
-	config := buildCORSConfig(mainConfig)
+	config, enabled := buildCORSConfig(mainConfig)
 
+	if !enabled {
+		t.Fatal("expected a configured origin to install the middleware")
+	}
 	if config.AllowAllOrigins {
-		t.Fatal("expected configured origins to disable the allow-all fallback")
+		t.Fatal("expected configured origins to keep the allow-all mode off")
 	}
 	if len(config.AllowOrigins) != 1 || config.AllowOrigins[0] != "https://app.example.com" {
 		t.Fatalf("unexpected allowed origins: %#v", config.AllowOrigins)
@@ -42,8 +49,11 @@ func TestBuildCORSConfigHonorsAllowAllOrigins(t *testing.T) {
 	mainConfig.CORS.AllowAllOrigins = true
 	mainConfig.CORS.AllowedOrigins = []string{"https://ignored.example.com"}
 
-	config := buildCORSConfig(mainConfig)
+	config, enabled := buildCORSConfig(mainConfig)
 
+	if !enabled {
+		t.Fatal("expected allow_all_origins to install the middleware")
+	}
 	if !config.AllowAllOrigins {
 		t.Fatal("expected allow_all_origins to be forwarded to Gin")
 	}
@@ -170,5 +180,94 @@ func TestNormalizePrefix(t *testing.T) {
 		if _, err := normalizePrefix(raw); err == nil {
 			t.Errorf("normalizePrefix(%q) = nil error, want a refusal", raw)
 		}
+	}
+}
+
+// Empty method and header lists reached Gin untouched, and a preflight
+// answered without Access-Control-Allow-Methods blocks every non-simple
+// request.
+func TestBuildCORSConfigFillsEmptyMethodsAndHeaders(t *testing.T) {
+	mainConfig := &providers.MainConfig{}
+	mainConfig.CORS.AllowedOrigins = []string{"https://app.example.com"}
+
+	config, enabled := buildCORSConfig(mainConfig)
+
+	if !enabled {
+		t.Fatal("expected the middleware to be installed")
+	}
+	if len(config.AllowMethods) == 0 {
+		t.Error("expected default methods, got none")
+	}
+	if len(config.AllowHeaders) == 0 {
+		t.Error("expected default headers, got none")
+	}
+}
+
+func TestBuildCORSConfigKeepsConfiguredMethodsAndHeaders(t *testing.T) {
+	mainConfig := &providers.MainConfig{}
+	mainConfig.CORS.AllowedOrigins = []string{"https://app.example.com"}
+	mainConfig.CORS.AllowedMethods = []string{"GET"}
+	mainConfig.CORS.AllowedHeaders = []string{"Authorization"}
+
+	config, _ := buildCORSConfig(mainConfig)
+
+	if len(config.AllowMethods) != 1 || config.AllowMethods[0] != "GET" {
+		t.Errorf("configured methods must win, got %#v", config.AllowMethods)
+	}
+	if len(config.AllowHeaders) != 1 || config.AllowHeaders[0] != "Authorization" {
+		t.Errorf("configured headers must win, got %#v", config.AllowHeaders)
+	}
+}
+
+// max_age was multiplied by time.Hour on its way to Gin, which turned 12h
+// into 477807h and made the field unusable.
+func TestBuildCORSConfigForwardsMaxAgeUnchanged(t *testing.T) {
+	mainConfig := &providers.MainConfig{}
+	mainConfig.CORS.AllowAllOrigins = true
+	mainConfig.CORS.MaxAge = providers.Duration(12 * time.Hour)
+
+	config, _ := buildCORSConfig(mainConfig)
+
+	if config.MaxAge != 12*time.Hour {
+		t.Errorf("MaxAge = %v, want %v", config.MaxAge, 12*time.Hour)
+	}
+}
+
+func TestCORSEnabledOnlyFalseDisablesIt(t *testing.T) {
+	enabled, disabled := true, false
+
+	cases := map[string]struct {
+		value *bool
+		want  bool
+	}{
+		"absent key keeps CORS":  {nil, true},
+		"cors: true keeps CORS":  {&enabled, true},
+		"cors: false drops CORS": {&disabled, false},
+	}
+
+	for name, c := range cases {
+		mainConfig := &providers.MainConfig{}
+		mainConfig.Server.CORS = c.value
+		if got := corsEnabled(mainConfig); got != c.want {
+			t.Errorf("%s: corsEnabled() = %v, want %v", name, got, c.want)
+		}
+	}
+}
+
+func TestCORSSectionConfiguredDetectsADeadSection(t *testing.T) {
+	if corsSectionConfigured(&providers.MainConfig{}) {
+		t.Error("an empty cors section must not be reported as configured")
+	}
+
+	withOrigins := &providers.MainConfig{}
+	withOrigins.CORS.AllowedOrigins = []string{"https://app.example.com"}
+	if !corsSectionConfigured(withOrigins) {
+		t.Error("a section declaring an origin must be reported as configured")
+	}
+
+	withMaxAge := &providers.MainConfig{}
+	withMaxAge.CORS.MaxAge = providers.Duration(12 * time.Hour)
+	if !corsSectionConfigured(withMaxAge) {
+		t.Error("a section declaring only max_age must be reported as configured")
 	}
 }
