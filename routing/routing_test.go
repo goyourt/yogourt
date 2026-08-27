@@ -283,3 +283,36 @@ func TestBootBannerUsesAppNameAndVersion(t *testing.T) {
 		t.Errorf("bootBanner() of an empty config = %q, want a fallback name and the effective Gin mode", empty)
 	}
 }
+
+// The route folder comes from paths.route_folder, and from nowhere else:
+// Initialize takes no folder argument to contradict it with.
+func TestResolveAPIFolderReadsRouteFolder(t *testing.T) {
+	mainConfig := &providers.MainConfig{}
+	mainConfig.Paths.RouteFolder = "  ./routes/  "
+
+	got, err := resolveAPIFolder(mainConfig)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "./routes/" {
+		t.Fatalf("resolveAPIFolder() = %q, want %q", got, "./routes/")
+	}
+}
+
+func TestResolveAPIFolderFailsWhenRouteFolderIsMissing(t *testing.T) {
+	err := resolveAPIFolderError(t, &providers.MainConfig{})
+	if !strings.Contains(err.Error(), "paths.route_folder") {
+		t.Fatalf("error %q does not name the configuration key", err)
+	}
+}
+
+// resolveAPIFolderError returns the error of a resolution expected to fail.
+func resolveAPIFolderError(t *testing.T, mainConfig *providers.MainConfig) error {
+	t.Helper()
+
+	folder, err := resolveAPIFolder(mainConfig)
+	if err == nil {
+		t.Fatalf("resolveAPIFolder() = %q, want an error when route_folder is unset", folder)
+	}
+	return err
+}
