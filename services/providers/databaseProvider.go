@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -66,6 +67,10 @@ func GetCache() (*redis.Client, error) {
 func InitDB() *gorm.DB {
 	cfg := GetMainConfig()
 
+	if err := validateDatabaseType(cfg.Database.Type); err != nil {
+		log.Fatalf("❌ %v", err)
+	}
+
 	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=disable", cfg.Database.Host, cfg.Database.User, cfg.Database.Password, cfg.Database.DB, cfg.Database.Port)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
@@ -75,6 +80,21 @@ func InitDB() *gorm.DB {
 
 	fmt.Println("✅ Connexion with PostgreSQL")
 	return db
+}
+
+// validateDatabaseType checks database.type against the only driver this
+// provider can build. The field used to be parsed and read by nothing, so a
+// config asking for "mysql" quietly opened a PostgreSQL connection instead;
+// short of supporting a second driver, naming the mismatch at boot is the
+// least surprising thing the field can do. An empty value stays valid: it is
+// what a config that never cared about the driver holds.
+func validateDatabaseType(databaseType string) error {
+	switch strings.ToLower(strings.TrimSpace(databaseType)) {
+	case "", "postgres", "postgresql":
+		return nil
+	}
+
+	return fmt.Errorf("unsupported database.type %q: the provider only builds a PostgreSQL connection — use \"postgres\" or leave the field empty", databaseType)
 }
 
 // InitCache builds a Redis client and checks that it answers before handing

@@ -9,7 +9,7 @@ server:
   base_path: "/base_path"
 
 database:
-  type: "type"
+  type: "postgres"
   user: "user"
   password: "password"
   host: "host"
