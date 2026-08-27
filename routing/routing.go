@@ -2,6 +2,7 @@ package routing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -67,10 +68,15 @@ func WithPrefix(prefix string) Option {
 	}
 }
 
-// Initialize loads the route tree of apiFolder, wires the middlewares and
-// serves. The path is relative to the working directory and never reaches the
-// HTTP prefix: the URL of a route only comes from its position in the tree.
-func Initialize(apiFolder string, options ...Option) {
+// Initialize loads the route tree, wires the middlewares and serves.
+//
+// The folder holding the tree is read from paths.route_folder of the
+// configuration, and from nowhere else: the folder a deployment scans is a
+// setting, not an argument, and having it in two places meant a program could
+// contradict its own yogourt.yaml. The path is relative to the working
+// directory and never reaches the HTTP prefix: the URL of a route only comes
+// from its position in the tree.
+func Initialize(options ...Option) {
 	cfg := &config{}
 	for _, option := range options {
 		option(cfg)
@@ -82,6 +88,11 @@ func Initialize(apiFolder string, options ...Option) {
 	}
 
 	mainConfig := providers.GetMainConfig()
+
+	apiFolder, err := resolveAPIFolder(mainConfig)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	prefix, err := resolveAPIPrefix(cfg.prefix, mainConfig)
 	if err != nil {
@@ -169,6 +180,16 @@ func Initialize(apiFolder string, options ...Option) {
 	if err := r.Run(listenAddress(serverConfig.Host, serverConfig.Port)); err != nil {
 		log.Fatal("Error starting server: ", err)
 	}
+}
+
+// resolveAPIFolder returns the folder holding the route tree, which
+// paths.route_folder is the only source of.
+func resolveAPIFolder(mainConfig *providers.MainConfig) (string, error) {
+	if folder := strings.TrimSpace(mainConfig.Paths.RouteFolder); folder != "" {
+		return folder, nil
+	}
+
+	return "", errors.New("no route folder: set paths.route_folder in configs/yogourt.yaml")
 }
 
 // resolveAPIPrefix picks the HTTP prefix of the whole route tree: WithPrefix

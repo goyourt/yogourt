@@ -4,7 +4,7 @@ Yogourt transforme les dossiers Go d’un répertoire source en routes Gin. La p
 
 ## Convention de fichiers
 
-<code>routing.Initialize("api")</code> parcourt récursivement le dossier <code>api</code> depuis le répertoire de lancement.
+<code>routing.Initialize()</code> parcourt récursivement le dossier déclaré par <code>paths.route_folder</code> — ici <code>api</code> — depuis le répertoire de lancement.
 
 ~~~text
 api/
