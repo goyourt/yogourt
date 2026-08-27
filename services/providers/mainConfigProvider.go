@@ -50,14 +50,7 @@ type MainConfig struct {
 		BaseURL string `yaml:"base_url"`
 	} `yaml:"server"`
 
-	Database struct {
-		Type     string `yaml:"type"`
-		User     string `yaml:"user"`
-		Password string `yaml:"password"`
-		Host     string `yaml:"host"`
-		Port     int    `yaml:"port"`
-		DB       string `yaml:"db"`
-	} `yaml:"database"`
+	Database DatabaseConfig `yaml:"database"`
 
 	Cache struct {
 		Host     string `yaml:"host"`
@@ -94,6 +87,50 @@ type MainConfig struct {
 		AllowAllOrigins  bool     `yaml:"allow_all_origins"`
 		MaxAge           Duration `yaml:"max_age"`
 	} `yaml:"cors"`
+}
+
+// DatabaseConfig is the database section of the configuration. It is a named
+// type, not an anonymous struct like its neighbours, so the DSN and pool
+// helpers of the provider can take it as a parameter and be tested without
+// the global config.
+type DatabaseConfig struct {
+	Type     string `yaml:"type"`
+	User     string `yaml:"user"`
+	Password string `yaml:"password"`
+	Host     string `yaml:"host"`
+	Port     int    `yaml:"port"`
+	DB       string `yaml:"db"`
+	// SSLMode is the libpq sslmode of the connection. The DSN used to
+	// hard-code "disable", which is what an empty value still means:
+	// turning TLS on for every existing application would break the ones
+	// talking to a server that does not offer it.
+	SSLMode string `yaml:"ssl_mode"`
+	// SSLRootCert, SSLCert and SSLKey are the paths libpq needs beyond
+	// sslmode: the CA bundle "verify-ca" and "verify-full" check the server
+	// against, and the client certificate a server asking for one expects.
+	// Empty fields stay out of the DSN, so libpq keeps its own defaults
+	// (~/.postgresql/root.crt and friends).
+	SSLRootCert string `yaml:"ssl_root_cert"`
+	SSLCert     string `yaml:"ssl_cert"`
+	SSLKey      string `yaml:"ssl_key"`
+	// SearchPath is the schema search path of every session opened by the
+	// pool. Empty leaves the server default ("$user", public), so a
+	// deployment holding its tables in a named schema no longer has to
+	// qualify every model.
+	SearchPath string `yaml:"search_path"`
+	// Pool bounds the underlying database/sql pool.
+	Pool DatabasePoolConfig `yaml:"pool"`
+}
+
+// DatabasePoolConfig bounds the database/sql pool behind GORM. A zero field
+// keeps the default of database/sql — unlimited open connections, two idle
+// ones, no expiry — which is what the provider has always used. The two
+// durations accept a duration string ("30m") or a number of seconds.
+type DatabasePoolConfig struct {
+	MaxOpenConns    int      `yaml:"max_open_conns"`
+	MaxIdleConns    int      `yaml:"max_idle_conns"`
+	ConnMaxLifetime Duration `yaml:"conn_max_lifetime"`
+	ConnMaxIdleTime Duration `yaml:"conn_max_idle_time"`
 }
 
 // read and parse the config.yaml file
