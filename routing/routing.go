@@ -25,11 +25,18 @@ const (
 
 	// testConfigMode maps the config mode to Gin's own test mode.
 	testConfigMode = "test"
+
+	// DefaultPrefix is the HTTP prefix every route is published under when
+	// neither WithPrefix nor server.base_path names another one.
+	DefaultPrefix = "/api"
 )
 
 // config holds the settings applied by the functional options of Initialize.
 type config struct {
 	authorizer *authorization.Engine
+	// prefix is the raw value given to WithPrefix. Empty means the option was
+	// not used, so server.base_path — then DefaultPrefix — decides.
+	prefix string
 }
 
 // Option configures routing.Initialize.
@@ -47,6 +54,22 @@ func WithAuthorizer(engine *authorization.Engine) Option {
 	}
 }
 
+// WithPrefix publishes every route under prefix instead of the default
+// "/api". It wins over server.base_path of the configuration, so a program can
+// force its own mount point. WithPrefix("/") serves the tree at the root:
+// api/users/route.go then answers on "/users".
+//
+// A prefix names a mount point, never a resource: it is excluded from the
+// permissions derived by convention, exactly as "/api" was.
+func WithPrefix(prefix string) Option {
+	return func(cfg *config) {
+		cfg.prefix = prefix
+	}
+}
+
+// Initialize loads the route tree of apiFolder, wires the middlewares and
+// serves. The path is relative to the working directory and never reaches the
+// HTTP prefix: the URL of a route only comes from its position in the tree.
 func Initialize(apiFolder string, options ...Option) {
 	cfg := &config{}
 	for _, option := range options {
@@ -57,6 +80,14 @@ func Initialize(apiFolder string, options ...Option) {
 	if err != nil {
 		log.Fatal("Error resolving working directory: ", err)
 	}
+
+	mainConfig := providers.GetMainConfig()
+
+	prefix, err := resolveAPIPrefix(cfg.prefix, mainConfig)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	apiFolder = filepath.Join(basePath, apiFolder)
 
 	if _, err := os.Stat(apiFolder); err != nil {
@@ -71,7 +102,6 @@ func Initialize(apiFolder string, options ...Option) {
 		}
 	}
 
-	mainConfig := providers.GetMainConfig()
 	validateSecretKeyAtBoot(mainConfig.Security.SecretKey, mainConfig.Mode)
 
 	// Before gin.Default(): Gin logs its mode as it builds the engine, so
@@ -81,15 +111,13 @@ func Initialize(apiFolder string, options ...Option) {
 	r := gin.Default()
 	r.Use(cors.New(buildCORSConfig(mainConfig)))
 
-	r.OPTIONS("/*path", func(c *gin.Context) {
-		c.AbortWithStatus(204)
-	})
+	log.Printf("Serving the routes of %s under %s", apiFolder, displayPrefix(prefix))
 
 	if err := middleware.LoadMiddlewares(basePath); err != nil {
 		log.Fatal("Error loading middlewares: ", err)
 	}
 
-	declared, err := loadAPIHandlers(r, apiFolder, cfg.authorizer)
+	declared, err := loadAPIHandlers(r, prefix, apiFolder, cfg.authorizer)
 	if err != nil {
 		log.Fatal("Error loading handlers: ", err)
 	}
@@ -108,6 +136,60 @@ func Initialize(apiFolder string, options ...Option) {
 	if err := r.Run(listenAddress(serverConfig.Host, serverConfig.Port)); err != nil {
 		log.Fatal("Error starting server: ", err)
 	}
+}
+
+// resolveAPIPrefix picks the HTTP prefix of the whole route tree: WithPrefix
+// wins, then server.base_path of the configuration, then DefaultPrefix. The
+// result is normalized — "" for the root, "/segment…" otherwise — so no caller
+// has to deal with a trailing slash.
+func resolveAPIPrefix(option string, mainConfig *providers.MainConfig) (string, error) {
+	raw, source := strings.TrimSpace(option), "routing.WithPrefix"
+	if raw == "" {
+		raw, source = strings.TrimSpace(mainConfig.Server.BasePath), "server.base_path"
+	}
+	if raw == "" {
+		return DefaultPrefix, nil
+	}
+
+	prefix, err := normalizePrefix(raw)
+	if err != nil {
+		return "", fmt.Errorf("invalid %s: %w", source, err)
+	}
+
+	return prefix, nil
+}
+
+// normalizePrefix turns a written prefix into the form the route builder
+// expects: a leading slash, no trailing one, and "" for the root. A prefix is
+// a static mount point, so a Gin parameter or a space in it is a mistake worth
+// a boot failure instead of a route tree nobody can reach.
+func normalizePrefix(raw string) (string, error) {
+	trimmed := strings.Trim(strings.TrimSpace(raw), "/")
+	if trimmed == "" {
+		return "", nil
+	}
+
+	segments := strings.Split(trimmed, "/")
+	for _, segment := range segments {
+		if segment == "" {
+			return "", fmt.Errorf("prefix %q holds an empty segment", raw)
+		}
+		if strings.ContainsAny(segment, ":*") || strings.ContainsAny(segment, " \t") {
+			return "", fmt.Errorf("prefix %q: the segment %q cannot hold a Gin parameter or a space", raw, segment)
+		}
+	}
+
+	return "/" + strings.Join(segments, "/"), nil
+}
+
+// displayPrefix renders a normalized prefix for a human: the root prefix is ""
+// internally, which reads as nothing at all in a log line.
+func displayPrefix(prefix string) string {
+	if prefix == "" {
+		return "/"
+	}
+
+	return prefix
 }
 
 // applyGinMode aligns Gin's own mode with the application mode of the config:

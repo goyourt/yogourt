@@ -6,6 +6,7 @@ env_files: "./configs/yogourt.env"
 server:
   port: 1000
   cors: true
+  base_path: "/base_path"
 
 database:
   type: "type"

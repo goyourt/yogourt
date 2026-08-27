@@ -66,18 +66,22 @@ func (p methodPermission) origin() string {
 
 // derivePermission returns the permission derived by convention from the Gin
 // route path and the HTTP method, as "<resource>.<verb>": the resource is the
-// last static segment of the path below "/api" (lowercased), the verb comes
-// from derivedVerbs. ok is false when no convention applies — the "/api" route
-// itself has no resource segment, and an HTTP method outside derivedVerbs has
-// no verb — in which case the route must declare the permission explicitly.
-func derivePermission(routePath, method string) (permission string, ok bool) {
+// last static segment of the path below prefix (lowercased), the verb comes
+// from derivedVerbs. ok is false when no convention applies — the root route,
+// the prefix itself, has no resource segment, and an HTTP method outside
+// derivedVerbs has no verb — in which case the route must declare the
+// permission explicitly.
+//
+// prefix is the configured HTTP prefix ("/api" by default): the segments it
+// holds name a mount point, not a resource, so they never derive a permission.
+func derivePermission(prefix, routePath, method string) (permission string, ok bool) {
 	verb, known := derivedVerbs[strings.ToUpper(method)]
 	if !known {
 		return "", false
 	}
 
 	resource := ""
-	trimmed := strings.TrimPrefix(routePath, "/api")
+	trimmed := strings.TrimPrefix(routePath, prefix)
 	for _, segment := range strings.Split(trimmed, "/") {
 		if segment == "" {
 			continue
@@ -111,7 +115,7 @@ func derivePermission(routePath, method string) (permission string, ok bool) {
 // The returned map holds the effective permission of each valid method, so the
 // loader builds the handler chains and the boot synchronization without
 // recomputing anything.
-func validateRoutePermissionGroup(route string, files []routeFile, known []authorization.Action) (map[string]methodPermission, []routeViolation) {
+func validateRoutePermissionGroup(prefix, route string, files []routeFile, known []authorization.Action) (map[string]methodPermission, []routeViolation) {
 	sortedFiles := append([]routeFile(nil), files...)
 	sort.Slice(sortedFiles, func(i, j int) bool { return sortedFiles[i].file < sortedFiles[j].file })
 
@@ -174,7 +178,7 @@ func validateRoutePermissionGroup(route string, files []routeFile, known []autho
 		if !overridden {
 			file = methodFiles[method]
 
-			derived, ok := derivePermission(route, method)
+			derived, ok := derivePermission(prefix, route, method)
 			if !ok {
 				violations = append(violations, routeViolation{
 					File:    file,

@@ -121,6 +121,8 @@ func TestPluginRoutesEndToEnd(t *testing.T) {
 
 	t.Run("WithoutAuthorizer", world.testWithoutAuthorizer)
 	t.Run("WithAuthorizer", world.testWithAuthorizer)
+	t.Run("CustomPrefix", world.testCustomPrefix)
+	t.Run("RootPrefix", world.testRootPrefix)
 	t.Run("InconsistentPermissions", world.testInconsistentPermissions)
 	t.Run("MissingCompiledPlugin", world.testMissingCompiledPlugin)
 }
@@ -133,7 +135,7 @@ func (w *pluginWorld) testWithoutAuthorizer(t *testing.T) {
 	logs := captureStandardLog(t)
 
 	r := gin.New()
-	declared, err := loadAPIHandlers(r, w.apiDir, nil)
+	declared, err := loadAPIHandlers(r, "/api", w.apiDir, nil)
 	if err != nil {
 		t.Fatalf("loading the API without authorizer failed: %v", err)
 	}
@@ -202,7 +204,7 @@ func (w *pluginWorld) testWithAuthorizer(t *testing.T) {
 	logs := captureStandardLog(t)
 
 	r := gin.New()
-	declared, err := loadAPIHandlers(r, w.apiDir, engine)
+	declared, err := loadAPIHandlers(r, "/api", w.apiDir, engine)
 	if err != nil {
 		t.Fatalf("loading the API with an authorizer failed: %v", err)
 	}
@@ -289,12 +291,69 @@ func (w *pluginWorld) testWithAuthorizer(t *testing.T) {
 	})
 }
 
+// testCustomPrefix covers the configurable HTTP prefix: the same route tree
+// served under "/v1" instead of "/api". The prefix moves every URL and nothing
+// else — in particular the permissions derived by convention are identical,
+// because a prefix names a mount point, not a resource.
+func (w *pluginWorld) testCustomPrefix(t *testing.T) {
+	engine := authorization.NewEngine(authorization.WithProvider(grantingProvider(t)))
+
+	r := gin.New()
+	declared, err := loadAPIHandlers(r, "/v1", w.apiDir, engine)
+	if err != nil {
+		t.Fatalf("loading the API under a custom prefix failed: %v", err)
+	}
+
+	assertRegisteredRoutes(t, r, []string{
+		"GET /v1/public",
+		"GET /v1/widgets",
+		"POST /v1/widgets",
+		"GET /v1/widgets/:id",
+		"PATCH /v1/widgets/:id",
+	})
+
+	// Same permissions as under "/api": "v1" never becomes a resource.
+	assertDeclaredPermissions(t, declared, []authorization.Action{
+		"widgets.create",
+		"widgets.read",
+		"widgets.update",
+	})
+
+	body := requireJSON(t, w.request(t, r, http.MethodGet, "/v1/public", ""), http.StatusOK)
+	requireFields(t, body, map[string]any{"handler": "public.index"})
+
+	// The old prefix is gone, not aliased.
+	if recorder := w.request(t, r, http.MethodGet, "/api/public", ""); recorder.Code != http.StatusNotFound {
+		t.Errorf("GET /api/public = %d, want 404 once the prefix is /v1", recorder.Code)
+	}
+}
+
+// testRootPrefix covers the extreme case of the same setting: an empty prefix
+// serves the route tree at the root, and the root route file answers on "/".
+func (w *pluginWorld) testRootPrefix(t *testing.T) {
+	r := gin.New()
+	if _, err := loadAPIHandlers(r, "", w.apiDir, nil); err != nil {
+		t.Fatalf("loading the API at the root failed: %v", err)
+	}
+
+	assertRegisteredRoutes(t, r, []string{
+		"GET /public",
+		"GET /widgets",
+		"POST /widgets",
+		"GET /widgets/:id",
+		"PATCH /widgets/:id",
+	})
+
+	body := requireJSON(t, w.request(t, r, http.MethodGet, "/widgets", ""), http.StatusOK)
+	requireFields(t, body, map[string]any{"handler": "widgets.list", "signature": "gin"})
+}
+
 // testInconsistentPermissions covers the boot report: a Permissions entry
 // naming no exported handler must fail the load, with the violation named.
 func (w *pluginWorld) testInconsistentPermissions(t *testing.T) {
 	engine := authorization.NewEngine(authorization.WithProvider(memory.NewProvider()))
 
-	_, err := loadAPIHandlers(gin.New(), w.brokenDir, engine)
+	_, err := loadAPIHandlers(gin.New(), "/api", w.brokenDir, engine)
 	if err == nil {
 		t.Fatal("an orphan Permissions entry must fail the load")
 	}
@@ -311,7 +370,7 @@ func (w *pluginWorld) testInconsistentPermissions(t *testing.T) {
 // testMissingCompiledPlugin covers a scanned route file whose plugin was never
 // compiled: the load must fail naming the plugin it looked for.
 func (w *pluginWorld) testMissingCompiledPlugin(t *testing.T) {
-	_, err := loadAPIHandlers(gin.New(), w.missingDir, nil)
+	_, err := loadAPIHandlers(gin.New(), "/api", w.missingDir, nil)
 	if err == nil {
 		t.Fatal("a route file without compiled plugin must fail the load")
 	}

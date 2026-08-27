@@ -29,7 +29,8 @@ type loadedRouteFile struct {
 }
 
 // loadAPIHandlers loads every route plugin under basePath and registers its
-// handlers. engine is nil when no authorizer is configured (D1); otherwise
+// handlers under prefix — the configured HTTP prefix, "/api" unless the
+// application changed it. engine is nil when no authorizer is configured (D1); otherwise
 // every method of every route gets an effective permission — derived from the
 // folder and the HTTP method by convention, or overridden by the Permissions
 // map of the folder — and the RBAC middleware is inserted in front of each
@@ -37,7 +38,7 @@ type loadedRouteFile struct {
 // collected before failing, so a boot failure reports every problem at once
 // (D2). It returns the deduplicated set of effective permissions of the
 // routes, for the boot synchronization with the grant provider.
-func loadAPIHandlers(r *gin.Engine, basePath string, engine *authorization.Engine) ([]authorization.Action, error) {
+func loadAPIHandlers(r *gin.Engine, prefix, basePath string, engine *authorization.Engine) ([]authorization.Action, error) {
 	files, err := walkGoFiles(basePath)
 	if err != nil {
 		return nil, err
@@ -84,7 +85,7 @@ func loadAPIHandlers(r *gin.Engine, basePath string, engine *authorization.Engin
 			mu.Lock()
 			loaded = append(loaded, loadedRouteFile{
 				file:        reportFilePath(basePath, f),
-				routePath:   routePathFor(basePath, f),
+				routePath:   routePathFor(prefix, basePath, f),
 				routes:      routes,
 				permissions: permissions,
 				hasSymbol:   hasSymbol,
@@ -133,7 +134,7 @@ func loadAPIHandlers(r *gin.Engine, basePath string, engine *authorization.Engin
 					hasSymbol:   lf.hasSymbol && lf.symErr == nil,
 				})
 			}
-			routePermissions, groupViolations := validateRoutePermissionGroup(routePath, groupRouteFiles, known)
+			routePermissions, groupViolations := validateRoutePermissionGroup(prefix, routePath, groupRouteFiles, known)
 			violations = append(violations, groupViolations...)
 			effective[routePath] = routePermissions
 		}
