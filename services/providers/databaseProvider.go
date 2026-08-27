@@ -3,7 +3,6 @@ package providers
 import (
 	"context"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,17 +20,33 @@ const cacheDialTimeout = 2 * time.Second
 
 // DB global instance of the database
 var (
-	dbOnce  sync.Once
+	dbMu    sync.Mutex
 	cacheMu sync.Mutex
 	db      *gorm.DB
 	cache   *redis.Client
 )
 
-func GetDB() *gorm.DB {
-	dbOnce.Do(func() {
-		db = InitDB()
-	})
-	return db
+// GetDB returns the shared GORM connection, connecting on first use.
+//
+// The connection is memoized only once it has been opened, exactly like
+// GetCache: an outage at the first call no longer poisons the singleton for
+// the lifetime of the process, and the next caller retries instead of being
+// handed a nil connection.
+func GetDB() (*gorm.DB, error) {
+	dbMu.Lock()
+	defer dbMu.Unlock()
+
+	if db != nil {
+		return db, nil
+	}
+
+	connection, err := InitDB()
+	if err != nil {
+		return nil, err
+	}
+
+	db = connection
+	return db, nil
 }
 
 // GetCache returns the shared Redis client, connecting on first use.
@@ -65,28 +80,28 @@ func GetCache() (*redis.Client, error) {
 // the process from inside whatever request first touched the database: an
 // outage of a few seconds took the whole application down instead of failing
 // the requests that needed it.
-func InitDB() *gorm.DB {
+func InitDB() (*gorm.DB, error) {
 	cfg := GetMainConfig()
 
 	if err := validateDatabaseType(cfg.Database.Type); err != nil {
-		log.Fatalf("❌ %v", err)
+		return nil, err
 	}
 
 	if err := validateSSLMode(cfg.Database.SSLMode); err != nil {
-		log.Fatalf("❌ %v", err)
+		return nil, err
 	}
 
-	db, err := gorm.Open(postgres.Open(buildDSN(cfg.Database)), &gorm.Config{})
+	connection, err := gorm.Open(postgres.Open(buildDSN(cfg.Database)), &gorm.Config{})
 	if err != nil {
-		log.Fatalf("❌ Error while connecting database: %v", err)
+		return nil, fmt.Errorf("❌ Error while connecting database: %w", err)
 	}
 
-	if err := applyPoolSettings(db, cfg.Database.Pool); err != nil {
-		log.Fatalf("❌ %v", err)
+	if err := applyPoolSettings(connection, cfg.Database.Pool); err != nil {
+		return nil, err
 	}
 
 	fmt.Println("✅ Connexion with PostgreSQL")
-	return db
+	return connection, nil
 }
 
 // defaultSSLMode keeps the connection in clear text when database.ssl_mode is
