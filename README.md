@@ -57,6 +57,9 @@ mode: "development"
 server:
   port: 8080
 
+paths:
+  route_folder: "api"
+
 cors:
   allowed_origins:
     - "http://localhost:3000"
@@ -122,7 +125,7 @@ package main
 import "github.com/goyourt/yogourt/routing"
 
 func main() {
-	routing.Initialize("api")
+	routing.Initialize()
 }
 ~~~
 
@@ -179,6 +182,8 @@ func GET(c *yogourt.Context, params Params) {
 func main() {}
 ~~~
 
+Le dossier scanné vient de <code>paths.route_folder</code> : <code>routing.Initialize()</code> ne prend pas de dossier en argument. Le préfixe HTTP vaut <code>/api</code> par défaut et se règle par <code>routing.WithPrefix("/v1")</code> ou par <code>server.base_path</code> dans la configuration ; il ne dépend pas du nom du dossier scanné.
+
 La syntaxe de dossier <code>id_</code> est recommandée. Les formes historiques <code>[id]</code> et <code>_id</code> restent reconnues. Le [guide de routage](docs/routing.md) décrit les signatures, conversions et règles de middleware.
 
 ## CLI
@@ -210,9 +215,7 @@ Sur une plateforme sans support des plugins Go, le test se saute de lui-même av
 
 - les plugins Go ne sont pas portables vers Windows et sont sensibles à toute différence de toolchain ou de dépendances ;
 - le runtime vérifie uniquement l’existence des fichiers <code>.so</code>, pas leur fraîcheur ;
-- le préfixe HTTP est toujours <code>/api</code>, quel que soit l’argument de <code>routing.Initialize</code> ;
 - une collision méthode/route n’est pas détectée avant l’enregistrement et peut provoquer un panic Gin ;
-- <code>server.cors</code> est encore ignoré et <code>cors.max_age</code> est mal converti ;
-- le fournisseur de base de données est PostgreSQL uniquement et force <code>sslmode=disable</code>.
+- le fournisseur de base de données est PostgreSQL uniquement — <code>database.type</code> refuse toute autre valeur au démarrage. TLS, chemin de recherche des schémas et bornes du pool se règlent par <code>database.ssl_mode</code>, <code>database.search_path</code> et <code>database.pool</code> ; sans ces clés la connexion reste en clair, comme avant.
 
 Ces contraintes sont détaillées dans les guides afin de ne pas les confondre avec des garanties de la future version stable.

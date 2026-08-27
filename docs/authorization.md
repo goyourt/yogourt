@@ -79,7 +79,7 @@ func main() {
 		authorization.WithKnownPermissions("articles.read", "articles.create", "articles.update"),
 	)
 
-	routing.Initialize("api", routing.WithAuthorizer(engine))
+	routing.Initialize(routing.WithAuthorizer(engine))
 }
 
 // Restriction ABAC : seul le propriétaire modifie sa ressource.
