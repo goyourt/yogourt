@@ -31,8 +31,13 @@ type MainConfig struct {
 
 	Server struct {
 		Port int    `yaml:"port"`
-		CORS bool   `yaml:"cors"`
 		Host string `yaml:"host"`
+		// CORS switches the CORS middleware and the preflight catch-all on
+		// or off. A pointer, because the absent key and an explicit false
+		// must not mean the same thing: an application that never wrote the
+		// key keeps the middleware it has always had, and only "cors: false"
+		// removes it.
+		CORS *bool `yaml:"cors"`
 		// BasePath is the HTTP prefix every route is published under. Empty
 		// falls back to routing.DefaultPrefix ("/api").
 		BasePath string `yaml:"base_path"`

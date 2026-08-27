@@ -29,7 +29,7 @@ func TestConfigReader(t *testing.T) {
 	if cfg.Paths.RouteFolder != "route_folder" {
 		t.Errorf("Route folder config not found")
 	}
-	if cfg.Server.CORS != true {
+	if cfg.Server.CORS == nil || !*cfg.Server.CORS {
 		t.Errorf("Server config not found")
 	}
 	if cfg.Server.BasePath != "/base_path" {
