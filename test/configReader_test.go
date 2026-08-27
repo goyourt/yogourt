@@ -26,8 +26,8 @@ func TestConfigReader(t *testing.T) {
 	if cfg.Database.Port != 1000 {
 		t.Errorf("Database config not found")
 	}
-	if cfg.Paths.ModelFolder != "model_folder" {
-		t.Errorf("Paths config not found")
+	if cfg.Paths.RouteFolder != "route_folder" {
+		t.Errorf("Route folder config not found")
 	}
 	if cfg.Server.CORS != true {
 		t.Errorf("Server config not found")
