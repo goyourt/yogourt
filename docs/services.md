@@ -262,6 +262,19 @@ err = services.CheckPassword(hash, password)
 
 <code>IsPasswordValid</code> vérifie la politique de complexité, pas un mot de passe existant. <code>GetHashedPassword</code> hache, <code>CheckPassword</code> compare : une application n’a donc pas à dépendre de bcrypt elle-même.
 
+Les contrôles sont appliqués dans cet ordre, chacun selon le champ de <code>security</code> qui le commande :
+
+| Champ | Ce qu’il exige |
+| --- | --- |
+| — | un mot de passe non vide, toujours |
+| <code>password_minimum_length</code> | <code>len(pwd)</code> au moins égal à la valeur — des octets, pas des runes |
+| <code>password_number_required</code> | au moins un chiffre Unicode (<code>unicode.IsDigit</code>) |
+| <code>password_special_char_required</code> | au moins une ponctuation ou un symbole Unicode |
+| <code>password_upper_case_required</code> | au moins une majuscule Unicode, accents compris |
+| <code>password_lower_case_required</code> | au moins une minuscule Unicode, accents compris |
+
+Les drapeaux sont indépendants et cumulatifs ; à <code>false</code> ou absents, le contrôle n’a pas lieu. Sans aucune clé, seule la chaîne vide est refusée : <code>"a"</code> est valide. Rien dans le framework n’appelle <code>IsPasswordValid</code> — c’est à la route d’inscription ou de changement de mot de passe de le faire.
+
 <code>GetHashedPassword</code> utilise bcrypt. Le coût par défaut est 12 lorsque <code>security.hash_cost</code> vaut 0. <code>CheckPassword</code> retourne <code>nil</code> quand le mot de passe correspond au hash.
 
 L’erreur retournée par <code>CheckPassword</code> ne doit **jamais** être renvoyée au client, même reformulée : elle distingue un mot de passe faux (<code>bcrypt.ErrMismatchedHashAndPassword</code>) d’un hash malformé, tronqué ou de version inconnue (<code>bcrypt.ErrHashTooShort</code>, <code>bcrypt.HashVersionTooNewError</code>…). Cette différence indique à un attaquant si le compte existe et comment son identifiant est stocké. Journalisez-la si besoin, et répondez un message générique unique :
