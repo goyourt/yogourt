@@ -1,10 +1,12 @@
 package routing
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/goyourt/yogourt/services/providers"
 )
 
@@ -315,4 +317,62 @@ func resolveAPIFolderError(t *testing.T, mainConfig *providers.MainConfig) error
 		t.Fatalf("resolveAPIFolder() = %q, want an error when route_folder is unset", folder)
 	}
 	return err
+}
+
+// Gin's default headers stop at Origin, Content-Length and Content-Type.
+// Authorization is not CORS-safelisted, so a browser drops it unless the
+// response allows it by name: without this, a framework shipping JWT
+// authentication handed out a default configuration that broke its own login
+// from any other origin.
+func TestBuildCORSConfigAllowsAuthorizationByDefault(t *testing.T) {
+	mainConfig := &providers.MainConfig{}
+	mainConfig.CORS.AllowedOrigins = []string{"https://app.example.com"}
+
+	config, _ := buildCORSConfig(mainConfig)
+
+	if !slices.Contains(config.AllowHeaders, "Authorization") {
+		t.Fatalf("expected Authorization among the default headers, got %#v", config.AllowHeaders)
+	}
+	for _, header := range cors.DefaultConfig().AllowHeaders {
+		if !slices.Contains(config.AllowHeaders, header) {
+			t.Errorf("expected Gin default header %q to survive, got %#v", header, config.AllowHeaders)
+		}
+	}
+}
+
+// An explicit list is used exactly as written: nothing is added to a choice
+// the configuration made on purpose.
+func TestBuildCORSConfigAddsNothingToConfiguredHeaders(t *testing.T) {
+	mainConfig := &providers.MainConfig{}
+	mainConfig.CORS.AllowedOrigins = []string{"https://app.example.com"}
+	mainConfig.CORS.AllowedHeaders = []string{"Content-Type"}
+
+	config, _ := buildCORSConfig(mainConfig)
+
+	if len(config.AllowHeaders) != 1 || config.AllowHeaders[0] != "Content-Type" {
+		t.Fatalf("configured headers must be used as written, got %#v", config.AllowHeaders)
+	}
+}
+
+// cors.DefaultConfig() hands back a slice this package must not extend in
+// place, or the next caller inherits the previous one's Authorization.
+func TestDefaultAllowedHeadersDoesNotMutateItsInput(t *testing.T) {
+	ginDefaults := cors.DefaultConfig().AllowHeaders
+	before := slices.Clone(ginDefaults)
+
+	defaultAllowedHeaders(ginDefaults)
+
+	if !slices.Equal(ginDefaults, before) {
+		t.Fatalf("defaultAllowedHeaders mutated its input: %#v, want %#v", ginDefaults, before)
+	}
+}
+
+// An input already carrying the header — whatever its case — is returned
+// untouched: Access-Control-Allow-Headers must not list it twice.
+func TestDefaultAllowedHeadersDoesNotDuplicate(t *testing.T) {
+	got := defaultAllowedHeaders([]string{"Origin", "authorization"})
+
+	if len(got) != 2 {
+		t.Fatalf("defaultAllowedHeaders() = %#v, want the input untouched", got)
+	}
 }

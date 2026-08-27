@@ -365,8 +365,9 @@ func buildCORSConfig(mainConfig *providers.MainConfig) (cors.Config, bool) {
 
 	// Empty lists reached Gin as-is, and a preflight answered without
 	// Access-Control-Allow-Methods/-Headers blocks every non-simple request.
-	// Gin's own defaults are a working starting point; note that they do not
-	// include Authorization, which an API behind JWT must list itself.
+	// Gin's own defaults are the starting point, plus Authorization: see
+	// defaultAllowedHeaders. A list written in the configuration is used
+	// exactly as written — nothing is added to an explicit choice.
 	defaults := cors.DefaultConfig()
 	allowedMethods := config.AllowedMethods
 	if len(allowedMethods) == 0 {
@@ -374,7 +375,7 @@ func buildCORSConfig(mainConfig *providers.MainConfig) (cors.Config, bool) {
 	}
 	allowedHeaders := config.AllowedHeaders
 	if len(allowedHeaders) == 0 {
-		allowedHeaders = defaults.AllowHeaders
+		allowedHeaders = defaultAllowedHeaders(defaults.AllowHeaders)
 	}
 
 	return cors.Config{
@@ -385,6 +386,36 @@ func buildCORSConfig(mainConfig *providers.MainConfig) (cors.Config, bool) {
 		AllowCredentials: config.AllowCredentials,
 		MaxAge:           config.MaxAge.Duration(),
 	}, true
+}
+
+// defaultAllowedHeaders completes Gin's default Access-Control-Allow-Headers
+// with Authorization.
+//
+// Authorization is not a CORS-safelisted request header: a cross-origin call
+// carrying it is preflighted, and the browser drops it unless the response
+// allows it by name. Gin's defaults stop at Origin, Content-Length and
+// Content-Type, so a framework shipping JWT authentication was handing out a
+// default configuration that broke its own login as soon as the front end
+// lived on another origin — silently, since same-origin calls kept working.
+//
+// Allowing a header grants nothing by itself: the origin whitelist stays the
+// only gate, and an allowed origin is precisely the one meant to send a
+// bearer token.
+func defaultAllowedHeaders(ginDefaults []string) []string {
+	const authorizationHeader = "Authorization"
+
+	for _, header := range ginDefaults {
+		if strings.EqualFold(header, authorizationHeader) {
+			return ginDefaults
+		}
+	}
+
+	// A fresh slice: cors.DefaultConfig() hands back its own, and appending
+	// to it would leave the next caller's defaults up to this one.
+	headers := make([]string, 0, len(ginDefaults)+1)
+	headers = append(headers, ginDefaults...)
+
+	return append(headers, authorizationHeader)
 }
 
 func listenAddress(host string, port int) string {
