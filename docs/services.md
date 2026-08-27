@@ -280,6 +280,7 @@ err := services.SavePasswordFailure(username)
 count, err := services.GetPasswordFailureCount(username)
 ~~~
 
+Les deux appels remontent l’erreur de <code>GetCache()</code> si Redis est injoignable.
 Le compteur regarde une fenêtre de 24 heures, mais les entrées anciennes ne sont actuellement ni supprimées ni associées à un TTL. Les appels utilisent aussi <code>context.Background()</code> et plusieurs échecs dans la même seconde peuvent partager le même membre Redis.
 
 ## Fichiers
