@@ -41,6 +41,13 @@ type MainConfig struct {
 		// BasePath is the HTTP prefix every route is published under. Empty
 		// falls back to routing.DefaultPrefix ("/api").
 		BasePath string `yaml:"base_path"`
+		// BaseURL is the public URL the application is reachable at, used by
+		// services.GetBaseUrl. Host is a listening address — "0.0.0.0" tells
+		// the socket to accept every interface and says nothing about how a
+		// client reaches the application — so a deployment behind a reverse
+		// proxy, a TLS terminator or a container port mapping declares its
+		// public URL here. Empty rebuilds it from Host and Port.
+		BaseURL string `yaml:"base_url"`
 	} `yaml:"server"`
 
 	Database struct {
