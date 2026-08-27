@@ -32,6 +32,9 @@ func TestConfigReader(t *testing.T) {
 	if cfg.Server.CORS != true {
 		t.Errorf("Server config not found")
 	}
+	if cfg.Server.BasePath != "/base_path" {
+		t.Errorf("Server base path not found")
+	}
 	if cfg.Cache.DB != 1000 {
 		t.Errorf("Cache config not found")
 	}

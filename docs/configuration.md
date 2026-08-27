@@ -19,6 +19,7 @@ server:
   port: 8080
   host: "127.0.0.1"
   cors: true
+  base_path: "/api"
 
 database:
   type: "postgres"
