@@ -68,7 +68,7 @@ cors:
   allow_all_origins: false
 ~~~
 
-Le champ <code>cors.max_age</code> est volontairement omis. L’implémentation multiplie directement la valeur YAML décodée par <code>time.Hour</code> : une valeur numérique <code>1</code> produit une heure, tandis qu’une durée textuelle déjà exprimée comme <code>1h</code> serait multipliée une seconde fois.
+Le champ <code>cors.max_age</code> accepte un nombre de secondes (<code>3600</code>) ou une durée (<code>12h</code>, <code>300ms</code>). Omis, il vaut <code>0</code> et l’en-tête <code>Access-Control-Max-Age</code> n’est pas envoyé.
 
 ## Référence des champs
 

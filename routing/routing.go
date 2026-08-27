@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -179,7 +178,7 @@ func buildCORSConfig(mainConfig *providers.MainConfig) cors.Config {
 		AllowMethods:     config.AllowedMethods,
 		AllowHeaders:     config.AllowedHeaders,
 		AllowCredentials: config.AllowCredentials,
-		MaxAge:           config.MaxAge * time.Hour,
+		MaxAge:           config.MaxAge.Duration(),
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -69,12 +70,12 @@ type MainConfig struct {
 	} `yaml:"security"`
 
 	CORS struct {
-		AllowedOrigins   []string      `yaml:"allowed_origins"`
-		AllowedMethods   []string      `yaml:"allowed_methods"`
-		AllowedHeaders   []string      `yaml:"allowed_headers"`
-		AllowCredentials bool          `yaml:"allow_credentials"`
-		AllowAllOrigins  bool          `yaml:"allow_all_origins"`
-		MaxAge           time.Duration `yaml:"max_age"`
+		AllowedOrigins   []string `yaml:"allowed_origins"`
+		AllowedMethods   []string `yaml:"allowed_methods"`
+		AllowedHeaders   []string `yaml:"allowed_headers"`
+		AllowCredentials bool     `yaml:"allow_credentials"`
+		AllowAllOrigins  bool     `yaml:"allow_all_origins"`
+		MaxAge           Duration `yaml:"max_age"`
 	} `yaml:"cors"`
 }
 
@@ -99,6 +100,45 @@ func loadConfig(filePath string, cfg any) error {
 		return fmt.Errorf("Error parsing YAML : %v", err)
 	}
 
+	return nil
+}
+
+// Duration is a duration read from YAML, written either as a Go duration
+// string ("12h", "300ms") or as a bare number of seconds — the unit of the
+// HTTP headers these values end up in.
+//
+// yaml.v3 decodes time.Duration from duration strings only, so a plain
+// max_age: 3600 used to stop the boot on a decoding error, and the only way
+// to obtain a usable value was to work around a conversion bug.
+type Duration time.Duration
+
+// Duration returns the value as a time.Duration.
+func (d Duration) Duration() time.Duration { return time.Duration(d) }
+
+func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind != yaml.ScalarNode {
+		return fmt.Errorf("a duration must be a number of seconds (3600) or a duration string (12h)")
+	}
+
+	raw := strings.TrimSpace(value.Value)
+	if raw == "" {
+		*d = 0
+		return nil
+	}
+
+	// A bare number is seconds: it is what Access-Control-Max-Age and its
+	// kind are expressed in, and what a reader writing 3600 means.
+	if seconds, err := strconv.ParseFloat(raw, 64); err == nil {
+		*d = Duration(seconds * float64(time.Second))
+		return nil
+	}
+
+	parsed, err := time.ParseDuration(raw)
+	if err != nil {
+		return fmt.Errorf("%q is not a duration: write a number of seconds (3600) or a duration string (12h, 300ms)", raw)
+	}
+
+	*d = Duration(parsed)
 	return nil
 }
 
