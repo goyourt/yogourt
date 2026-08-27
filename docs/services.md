@@ -125,8 +125,8 @@ Créez un writer à partir du contexte Gin pour renseigner les champs d’audit 
 writer := database.CreateDataWriter(c)
 
 user := &models.User{
-	Email: "alban@example.com",
-	Name:  "Alban",
+	Email: "dupont@example.com",
+	Name:  "Dupont",
 }
 
 if err := writer.Create(user); err != nil {
@@ -371,7 +371,26 @@ Ce service ne doit pas être considéré comme un stockage de fichiers durci tan
 baseURL := services.GetBaseUrl()
 ~~~
 
-Si <code>server.host</code> est vide, le résultat est <code>http://localhost:&lt;port&gt;</code>. Sinon, la valeur du champ est retournée telle quelle. Comme le runtime interprète désormais ce champ comme une adresse d’écoute brute, <code>GetBaseUrl</code> peut donc retourner <code>127.0.0.1</code> sans schéma ni port ; encapsulez ce helper ou utilisez une configuration d’URL publique séparée jusqu’à l’alignement de son contrat.
+Le résultat porte toujours un schéma, et jamais de slash final.
+
+<code>server.base_url</code> est prioritaire quand il est renseigné : c’est la
+seule valeur qui décrit une adresse publique que le processus ne peut pas
+deviner — reverse proxy, terminaison TLS, port de conteneur remappé. Une
+valeur écrite sans schéma est servie en <code>http</code>.
+
+Sans <code>server.base_url</code>, l’URL est reconstruite depuis l’adresse
+d’écoute, <code>server.host</code> et <code>server.port</code> :
+
+| <code>server.host</code> | <code>server.port</code> | <code>GetBaseUrl()</code> |
+| --- | --- | --- |
+| vide | <code>8080</code> | <code>http://localhost:8080</code> |
+| <code>0.0.0.0</code> ou <code>::</code> | <code>8080</code> | <code>http://localhost:8080</code> |
+| <code>127.0.0.1</code> | <code>8080</code> | <code>http://127.0.0.1:8080</code> |
+| <code>::1</code> | <code>8080</code> | <code>http://[::1]:8080</code> |
+
+Un hôte vide ou non spécifié devient <code>localhost</code> : <code>0.0.0.0</code>
+demande au socket d’écouter toutes les interfaces et n’est pas une adresse
+qu’un client peut composer.
 
 ## Limites transverses
 
