@@ -314,17 +314,17 @@ package main
 import "github.com/goyourt/yogourt/routing"
 
 func main() {
-	routing.Initialize("api")
+	routing.Initialize()
 }
 ~~~
 
-L’argument désigne le dossier à scanner depuis le répertoire courant. Le processus charge la configuration, installe CORS, charge le plugin middleware, charge les routes, puis écoute sur <code>&lt;server.host&gt;:&lt;server.port&gt;</code>. Si <code>server.host</code> est vide, l’adresse par défaut est <code>0.0.0.0</code> ; les adresses IPv6 sont correctement encadrées.
+<code>paths.route_folder</code> désigne le dossier à scanner depuis le répertoire courant. Le processus charge la configuration, installe CORS, charge le plugin middleware, charge les routes, puis écoute sur <code>&lt;server.host&gt;:&lt;server.port&gt;</code>. Si <code>server.host</code> est vide, l’adresse par défaut est <code>0.0.0.0</code> ; les adresses IPv6 sont correctement encadrées.
 
 ## Limites actuelles
 
 - une collision entre deux fichiers qui exposent la même méthode sur la même URL n’est pas détectée en amont et peut provoquer un panic Gin ;
 - les plugins sont chargés en concurrence, donc l’ordre d’enregistrement n’est pas déterministe ;
-- le préfixe URL reste <code>/api</code> ;
+- le préfixe URL est unique pour toute l’arborescence : aucun moyen de monter deux préfixes dans le même processus ;
 - le runtime dépend des contraintes d’ABI et de plateforme du paquet Go <code>plugin</code> ;
 - le support du race detector avec les plugins Go est limité ;
 - un plugin compilé avec une toolchain ou des dépendances différentes peut échouer dans <code>plugin.Open</code>.

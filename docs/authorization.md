@@ -113,7 +113,7 @@ Les permissions sont **dérivées par convention** du dossier et de la méthode 
 | `/api/users/:id/comments` | `GET` | `comments.read` |
 | `/api/posts/:id/comments` | `GET` | `comments.read` |
 
-La règle : **la ressource est le dernier segment statique** de la route (les paramètres `:id` sont ignorés), et le verbe vient de la méthode — `GET` → `read`, `POST` → `create`, `PUT`/`PATCH` → `update`, `DELETE` → `delete`.
+La règle : **la ressource est le dernier segment statique** de la route sous le préfixe HTTP (les paramètres `:id` sont ignorés, et les segments du préfixe ne nomment jamais une ressource : sous `/v1`, `users` reste la ressource), et le verbe vient de la méthode — `GET` → `read`, `POST` → `create`, `PUT`/`PATCH` → `update`, `DELETE` → `delete`.
 
 Un fichier de route n'a donc plus rien à déclarer :
 
