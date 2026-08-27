@@ -75,7 +75,7 @@ Le champ <code>cors.max_age</code> accepte un nombre de secondes (<code>3600</co
 | Champ | Type | Comportement actuel |
 | --- | --- | --- |
 | <code>app_name</code> | chaîne | Métadonnée applicative |
-| <code>version</code> | chaîne | Métadonnée de version |
+| <code>version</code> | chaîne | Version journalisée au démarrage, avec <code>app_name</code> |
 | <code>mode</code> | chaîne | Mode applicatif. <code>production</code> rend fatal au démarrage un <code>security.secret_key</code> vide ou trop court et met Gin en mode release ; <code>test</code> met Gin en mode test ; toute autre valeur le laisse en debug. Une variable d’environnement <code>GIN_MODE</code> explicite reste prioritaire |
 | <code>env_files</code> | chaîne ou liste | Fichiers dotenv chargés avant l’expansion du YAML |
 
