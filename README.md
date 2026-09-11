@@ -17,7 +17,7 @@ Yogourt est un framework Go pour construire des API avec Gin, un routage basé s
 
 ## Prérequis
 
-- Go 1.24 ou une version compatible avec le module ;
+- Go 1.26.8 minimum, avec la même toolchain pour le binaire et ses plugins ;
 - macOS, Linux ou FreeBSD pour charger les plugins Go ;
 - PostgreSQL pour les services de base de données ;
 - Redis pour le cache et le suivi des échecs de mot de passe.
