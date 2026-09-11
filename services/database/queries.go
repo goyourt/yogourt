@@ -2,173 +2,223 @@ package database
 
 import (
 	"errors"
+	"reflect"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/goyourt/yogourt/interfaces"
 	"github.com/goyourt/yogourt/services/providers"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type DataWriter struct {
-	CurrentUser interfaces.BaseInterface
+	db          *gorm.DB
+	CurrentUser any
 }
 
 func CreateDataWriter(c *gin.Context) DataWriter {
 	if c == nil {
-		return DataWriter{nil}
+		return DataWriter{}
 	}
-
-	currentUser := providers.GetCurrentUser(c)
-
-	if currentUser == nil {
-		return DataWriter{nil}
-	}
-
-	return DataWriter{currentUser}
+	return DataWriter{CurrentUser: providers.GetCurrentUser(c)}
 }
 
-// GetAll loads every record matching values into objs. It returns GORM's
-// error: a database outage is no longer indistinguishable from an empty
-// result.
-func GetAll[T interfaces.BaseInterface](objs *[]T, values map[string]any) error {
+func (dw DataWriter) connection() (*gorm.DB, error) {
+	if dw.db != nil {
+		return dw.db, nil
+	}
+	return providers.GetDB()
+}
+
+func (dw DataWriter) withDB(db *gorm.DB) DataWriter {
+	return DataWriter{db: db, CurrentUser: dw.CurrentUser}
+}
+
+func GetAll[T any](objs *[]T, values map[string]any) error {
 	return GetAllPaginated(objs, values, 0, 0)
 }
 
-// GetAllPaginated behaves like GetAll with pagination. It returns GORM's
-// error, or the connection error when the database is unreachable.
-func GetAllPaginated[T interfaces.BaseInterface](objs *[]T, values map[string]any, page int, pageSize int) error {
-	query, err := SearchQuery(values, objs, page, pageSize)
+func GetAllPaginated[T any](objs *[]T, values map[string]any, page int, pageSize int) error {
+	query, err := SearchQuery(objs, values, page, pageSize)
 	if err != nil {
 		return err
 	}
-
 	return query.Distinct().Find(objs).Error
 }
 
-// GetOneBy loads the first record matching values into obj. It returns
-// GORM's error, including gorm.ErrRecordNotFound when nothing matches.
-func GetOneBy(obj interfaces.BaseInterface, values map[string]any) error {
-	if obj.GetID() == 0 {
-		resetId(obj)
-	}
-
-	query, err := JoinTables(values, &obj)
+// SearchQuery builds the paginated query GetAllPaginated runs, and is the
+// entry point for the applications refining it with the GORM API.
+func SearchQuery[T any](objs *[]T, values map[string]any, page int, pageSize int) (*gorm.DB, error) {
+	db, err := providers.GetDB()
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	return query.First(obj).Error
+	query, err := buildQuery(db, new(T), values)
+	if err != nil {
+		return nil, err
+	}
+	return Paginate(query, page, pageSize), nil
 }
 
-func (dw DataWriter) Create(obj interfaces.BaseInterface) error {
-	resetId(obj)
-	obj.SetCreatedById(dw.CurrentUser)
-	obj.SetUpdatedById(dw.CurrentUser)
-
+// GetOneBy loads the first record matching values into obj. The query runs
+// against a fresh probe: on gorm.ErrRecordNotFound or any error, obj is left
+// intact.
+func GetOneBy(obj any, values map[string]any) error {
 	db, err := providers.GetDB()
 	if err != nil {
 		return err
 	}
-
-	return db.Create(obj).Error
+	return getOneBy(db, obj, values)
 }
 
-func (dw DataWriter) Update(obj interfaces.BaseInterface) error {
-	obj.SetUpdatedById(dw.CurrentUser)
-	obj.SetUpdatedAt(time.Now())
-
-	db, err := providers.GetDB()
+func getOneBy(db *gorm.DB, obj any, values map[string]any) error {
+	rv, err := structPointer(obj)
 	if err != nil {
 		return err
 	}
-
-	if err := db.Model(obj).Where("uuid = ?", obj.GetUuid()).UpdateColumns(obj).Error; err != nil {
+	probe := reflect.New(rv.Elem().Type())
+	query, err := buildQuery(db, probe.Interface(), values)
+	if err != nil {
 		return err
 	}
-
-	return db.First(obj, "uuid = ?", obj.GetUuid()).Error
+	if err := query.First(probe.Interface()).Error; err != nil {
+		return err
+	}
+	rv.Elem().Set(probe.Elem())
+	return nil
 }
 
-func (dw DataWriter) Upsert(obj interfaces.BaseInterface, values map[string]any) error {
-	if err := GetOneBy(obj, values); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+func (dw DataWriter) Create(obj any) error {
+	if _, err := structPointer(obj); err != nil {
 		return err
 	}
+	if resetter, ok := capability[interfaces.GeneratedIdentityResetter](obj); ok {
+		resetter.ResetGeneratedIdentity()
+	}
+	if id, ok := actorId(dw.CurrentUser); ok {
+		if setter, ok := capability[interfaces.CreatedBySetter](obj); ok {
+			setter.SetCreatedBy(id)
+		}
+		if setter, ok := capability[interfaces.UpdatedBySetter](obj); ok {
+			setter.SetUpdatedBy(id)
+		}
+	}
+	db, err := dw.connection()
+	if err != nil {
+		return err
+	}
+	// Associations are never written implicitly: GORM's save-associations
+	// callbacks would insert non-nil relation fields — including rows carrying
+	// a client-chosen public id. Relations go through UpsertRelations.
+	return db.Omit(clause.Associations).Create(obj).Error
+}
 
-	if obj.GetID() == 0 {
+func (dw DataWriter) Update(obj any) error {
+	db, err := dw.connection()
+	if err != nil {
+		return err
+	}
+	if err := requireCompletePrimaryKey(db, obj); err != nil {
+		return err
+	}
+	if setter, ok := capability[interfaces.UpdatedAtSetter](obj); ok {
+		setter.SetUpdatedAt(time.Now())
+	}
+	if id, ok := actorId(dw.CurrentUser); ok {
+		if setter, ok := capability[interfaces.UpdatedBySetter](obj); ok {
+			setter.SetUpdatedBy(id)
+		}
+	}
+	// UpdateColumns(struct) only writes non-zero fields: Update patches, it
+	// cannot clear a column. Associations are omitted, see Create.
+	if err := db.Model(obj).Omit(clause.Associations).UpdateColumns(obj).Error; err != nil {
+		return err
+	}
+	// RowsAffected == 0 does not distinguish a no-op from a missing row: the
+	// reload by primary key settles it and returns the stored state.
+	return db.First(obj).Error
+}
+
+func (dw DataWriter) Upsert(obj any, values map[string]any) error {
+	rv, err := structPointer(obj)
+	if err != nil {
+		return err
+	}
+	db, err := dw.connection()
+	if err != nil {
+		return err
+	}
+	probe := reflect.New(rv.Elem().Type()).Interface()
+	switch err := getOneBy(db, probe, values); {
+	case errors.Is(err, gorm.ErrRecordNotFound):
 		return dw.Create(obj)
+	case err != nil:
+		return err
+	}
+	if err := copyPrimaryKeyFields(db, probe, obj); err != nil {
+		return err
 	}
 	return dw.Update(obj)
 }
 
-func (dw DataWriter) Delete(obj interfaces.BaseInterface) error {
-	db, err := providers.GetDB()
+func (dw DataWriter) Delete(obj any) error {
+	db, err := dw.connection()
 	if err != nil {
 		return err
 	}
-
-	return dw.softDelete(db, obj)
-}
-
-// softDelete soft deletes obj and really persists its deleted_by_id audit
-// column.
-//
-// GORM's soft-delete callback only writes the deleted_at column
-// (UPDATE ... SET deleted_at = ?): it never carries the other columns of the
-// model, so the value set by SetDeletedById used to be silently dropped and
-// deleted_by_id stayed NULL in database — unlike created_by_id and
-// updated_by_id, which Create and Update write along with every other column.
-// The audit column therefore needs its own explicit statement, targeting the
-// row by uuid exactly like Update does.
-//
-// Both statements share one explicit transaction: a row can never end up
-// soft deleted without its author, nor attributed to an author without being
-// deleted.
-func (dw DataWriter) softDelete(db *gorm.DB, obj interfaces.BaseInterface) error {
-	obj.SetDeletedById(dw.CurrentUser)
-
-	// No authenticated user: there is no audit column to write, the plain
-	// soft delete is enough and needs no transaction.
-	if dw.CurrentUser == nil {
-		return db.Delete(obj).Error
+	if err := requireCompletePrimaryKey(db, obj); err != nil {
+		return err
 	}
 
-	return db.Transaction(func(tx *gorm.DB) error {
-		err := tx.Model(obj).
-			Where("uuid = ?", obj.GetUuid()).
-			UpdateColumn("deleted_by_id", obj.GetDeletedById()).Error
-		if err != nil {
-			return err
-		}
+	auditor, hasAuditor := capability[interfaces.DeleteAuditor](obj)
+	id, hasActor := actorId(dw.CurrentUser)
+	if !hasAuditor || !hasActor {
+		return deleteOne(db, obj)
+	}
 
-		return tx.Delete(obj).Error
+	column, value := auditor.DeleteAuditAssignment(id)
+	if err := requireSchemaColumn(db, obj, column); err != nil {
+		return err
+	}
+	// One transaction: a row can never end up deleted without its author, nor
+	// attributed to an author without being deleted.
+	return db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(obj).Omit(clause.Associations).UpdateColumn(column, value)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		return deleteOne(tx, obj)
 	})
 }
 
-func HardDelete(obj interfaces.BaseInterface) error {
+func HardDelete(obj any) error {
 	db, err := providers.GetDB()
 	if err != nil {
 		return err
 	}
-
+	if err := requireCompletePrimaryKey(db, obj); err != nil {
+		return err
+	}
 	return hardDelete(db, obj)
 }
 
-func hardDelete(db *gorm.DB, obj interfaces.BaseInterface) error {
-	return db.Unscoped().Delete(obj).Error
+func hardDelete(db *gorm.DB, obj any) error {
+	return deleteOne(db.Unscoped(), obj)
 }
 
-// SearchQuery builds the paginated query GetAllPaginated runs, and is the
-// entry point for the applications refining it with the GORM API. It returns
-// the connection error instead of a query when the database is unreachable:
-// there is no *gorm.DB to hang a failure on before a connection exists.
-func SearchQuery[T interfaces.BaseInterface](values map[string]any, objs *[]T, page int, pageSize int) (*gorm.DB, error) {
-	query, err := JoinTables(values, new(T))
-	if err != nil {
-		return nil, err
+func deleteOne(db *gorm.DB, obj any) error {
+	result := db.Delete(obj)
+	if result.Error != nil {
+		return result.Error
 	}
-
-	return Paginate(query, page, pageSize), nil
+	if result.RowsAffected != 1 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func Paginate(query *gorm.DB, page int, pageSize int) *gorm.DB {

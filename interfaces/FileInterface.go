@@ -5,7 +5,6 @@ import (
 )
 
 type FileInterface interface {
-	BaseInterface
 	GetName() string
 	SetName(name string)
 	GetPath() string
@@ -27,6 +26,8 @@ type File struct {
 	Type      *string `json:"-"`
 	Content   *string `gorm:"-" json:"-"`
 }
+
+var _ FileInterface = (*File)(nil)
 
 func (f *File) GetName() string {
 	if nil == f.Name {
@@ -99,5 +100,5 @@ func (f *File) SetType(newType string) {
 }
 
 func (f *File) GetFilePath(folder string) string {
-	return filepath.Join(folder, f.GetUuid()+f.GetExtension())
+	return filepath.Join(folder, f.GetPublicId()+f.GetExtension())
 }
