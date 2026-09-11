@@ -92,12 +92,13 @@ func configureIntegrationDatabase(t *testing.T) {
   password: %q
   db: %q
   ssl_mode: %q
+  allow_insecure_local_socket: %t
 security:
   secret_key: %q
   token_issuer: %q
   token_audience: %q
   token_expires: 60
-`, values["host"], port, values["user"], values["password"], values["dbname"], values["sslmode"], integrationSecret, integrationIssuer, integrationAudience)
+`, values["host"], port, values["user"], values["password"], values["dbname"], values["sslmode"], filepath.IsAbs(values["host"]), integrationSecret, integrationIssuer, integrationAudience)
 	if err := os.WriteFile(filepath.Join(dir, "configs", "yogourt.yaml"), []byte(config), 0o600); err != nil {
 		t.Fatalf("write test config: %v", err)
 	}

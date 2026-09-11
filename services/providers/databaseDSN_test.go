@@ -20,12 +20,13 @@ func baseDatabaseConfig() DatabaseConfig {
 	}
 }
 
-// Without database.ssl_mode the connection stays in clear text: the DSN used
-// to hard-code sslmode=disable, and an application that never wrote the key
-// must keep the connection it has always opened.
-func TestBuildDSNDefaultsToDisabledSSL(t *testing.T) {
-	got := buildDSN(baseDatabaseConfig())
-	want := "host='db.internal' user='app' password='secret' dbname='app_db' port='5432' sslmode='disable'"
+// Network connections verify the server identity even when ssl_mode is absent.
+func TestBuildDSNDefaultsToVerifiedTLSOnNetwork(t *testing.T) {
+	got, err := buildDSN(baseDatabaseConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "host='db.internal' user='app' password='secret' dbname='app_db' port='5432' sslmode='verify-full'"
 
 	if got != want {
 		t.Fatalf("buildDSN() = %q, want %q", got, want)
@@ -40,7 +41,10 @@ func TestBuildDSNWritesOnlyDeclaredKeywords(t *testing.T) {
 	cfg.SSLRootCert = "/etc/ssl/root.crt"
 	cfg.SearchPath = "app,public"
 
-	got := buildDSN(cfg)
+	got, err := buildDSN(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, want := range []string{"sslmode='verify-full'", "sslrootcert='/etc/ssl/root.crt'", "search_path='app,public'"} {
 		if !strings.Contains(got, want) {
@@ -59,7 +63,11 @@ func TestBuildDSNOmitsUnsetPort(t *testing.T) {
 	cfg := baseDatabaseConfig()
 	cfg.Port = 0
 
-	if got := buildDSN(cfg); strings.Contains(got, "port=") {
+	got, err := buildDSN(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "port=") {
 		t.Fatalf("buildDSN() = %q, want no port keyword", got)
 	}
 }
@@ -70,34 +78,83 @@ func TestBuildDSNQuotesValuesWithSpacesAndQuotes(t *testing.T) {
 	cfg := baseDatabaseConfig()
 	cfg.Password = `p ss'w\rd`
 
-	got := buildDSN(cfg)
+	got, err := buildDSN(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := `password='p ss\'w\\rd'`
 
 	if !strings.Contains(got, want) {
 		t.Fatalf("buildDSN() = %q, want it to contain %q", got, want)
 	}
-	if !strings.Contains(got, "sslmode='disable'") {
+	if !strings.Contains(got, "sslmode='verify-full'") {
 		t.Fatalf("buildDSN() = %q, want the keywords after the password to survive it", got)
 	}
 }
 
-// An unknown sslmode is refused at boot, where the configuration key can be
-// named, instead of inside a libpq error.
-func TestValidateSSLModeAcceptsLibpqModes(t *testing.T) {
-	for _, mode := range []string{"", "disable", "allow", "prefer", "require", "verify-ca", "verify-full", " Verify-Full "} {
-		if err := validateSSLMode(mode); err != nil {
-			t.Errorf("validateSSLMode(%q) = %v, want nil", mode, err)
+func TestNetworkDatabaseRejectsModesWithoutIdentityVerification(t *testing.T) {
+	for _, mode := range []string{"disable", "allow", "prefer", "require", "verify-ca"} {
+		cfg := baseDatabaseConfig()
+		cfg.SSLMode = mode
+		if _, err := resolveDatabaseSSLMode(cfg); err == nil {
+			t.Errorf("resolveDatabaseSSLMode(%q) = nil error, want a refusal", mode)
 		}
 	}
 }
 
-func TestValidateSSLModeRejectsUnknownMode(t *testing.T) {
-	err := validateSSLMode("verify")
+func TestResolveDatabaseSSLModeRejectsUnknownMode(t *testing.T) {
+	cfg := baseDatabaseConfig()
+	cfg.SSLMode = "verify"
+	_, err := resolveDatabaseSSLMode(cfg)
 	if err == nil {
-		t.Fatal("validateSSLMode(\"verify\") = nil, want an error")
+		t.Fatal("resolveDatabaseSSLMode() = nil error, want an error")
 	}
 	if !strings.Contains(err.Error(), "database.ssl_mode") {
 		t.Errorf("error %q does not name the configuration key", err)
+	}
+}
+
+func TestLocalSocketRequiresExplicitClearTextException(t *testing.T) {
+	cfg := baseDatabaseConfig()
+	cfg.Host = "/private/tmp/postgres"
+	cfg.SSLMode = "disable"
+
+	if _, err := resolveDatabaseSSLMode(cfg); err == nil {
+		t.Fatal("local socket without allow_insecure_local_socket was accepted")
+	}
+	cfg.AllowInsecureLocalSocket = true
+	mode, err := resolveDatabaseSSLMode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode != "disable" {
+		t.Fatalf("local socket mode = %q, want disable", mode)
+	}
+}
+
+func TestLocalSocketExceptionCannotWeakenNetworkTransport(t *testing.T) {
+	cfg := baseDatabaseConfig()
+	cfg.AllowInsecureLocalSocket = true
+	if _, err := resolveDatabaseSSLMode(cfg); err == nil {
+		t.Fatal("network host accepted allow_insecure_local_socket")
+	}
+}
+
+func TestEmptyDatabaseHostCannotEnableTheLocalSocketException(t *testing.T) {
+	cfg := baseDatabaseConfig()
+	cfg.Host = ""
+
+	mode, err := resolveDatabaseSSLMode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode != "verify-full" {
+		t.Fatalf("empty host mode = %q, want verify-full", mode)
+	}
+
+	cfg.AllowInsecureLocalSocket = true
+	if _, err := resolveDatabaseSSLMode(cfg); err == nil {
+		t.Fatal("empty host accepted the local socket exception")
 	}
 }
 
