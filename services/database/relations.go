@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/goyourt/yogourt/dairy"
 	"github.com/goyourt/yogourt/interfaces"
 	"github.com/goyourt/yogourt/services/providers"
 	"gorm.io/gorm"
@@ -16,79 +15,134 @@ import (
 	"gorm.io/gorm/schema"
 )
 
-const likePatern = "LIKE"
-const orPatern = "OR"
-const orderByPatern = "orderBy"
+const orderByPattern = "orderBy"
 
-// buildQuery derives joins, conditions and ordering from values.
+// buildQuery derives schema-validated joins, conditions and ordering from
+// values. Ordinary filters are conjoined. Filters wrapped with Or are grouped
+// as one set of alternatives, then that group is conjoined with the ordinary
+// filters. Map iteration order therefore cannot broaden an ordinary constraint.
 func buildQuery(db *gorm.DB, model any, values map[string]any) (*gorm.DB, error) {
 	query := db.Model(model)
 	if err := query.Statement.Parse(query.Statement.Model); err != nil {
 		return nil, err
 	}
-	joined := []string{dairy.ToTitle(query.Statement.Table)}
-	aliases := map[string]string{}
+
+	joined := []string{}
+	var ordinary, alternatives []clause.Expression
+	var ordering any
 	for key, value := range values {
-		if key == orderByPatern {
-			query = addOrderBy(query, value)
+		if key == orderByPattern {
+			ordering = value
 			continue
 		}
-		if strings.Contains(key, ".") {
-			prefix := strings.Split(key, ".")[0]
-			relation := relationName(query.Statement.Schema, prefix)
-			aliases[strings.ToLower(prefix)] = relation
-			if !slices.Contains(joined, relation) {
-				query = joinRelation(query, relation)
-				joined = append(joined, relation)
-			}
+
+		var column clause.Column
+		var err error
+		query, column, err = resolveQueryColumn(query, key, &joined)
+		if err != nil {
+			return nil, err
 		}
-		query = addConditionPatern(query, key, value, aliases)
+		expression, alternative, err := filterExpression(column, value)
+		if err != nil {
+			return nil, fmt.Errorf("filter %q: %w", key, err)
+		}
+		if alternative {
+			alternatives = append(alternatives, expression)
+		} else {
+			ordinary = append(ordinary, expression)
+		}
+	}
+
+	for _, expression := range ordinary {
+		query = query.Where(expression)
+	}
+	if len(alternatives) > 0 {
+		query = query.Where(clause.Or(alternatives...))
+	}
+	if ordering != nil {
+		var err error
+		query, err = addOrdering(query, ordering, &joined)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return query.Preload(clause.Associations), nil
 }
 
-// relationName resolves a filter prefix to the exact GORM relation name:
-// dairy.ToTitle lowercases interior capitals ("accessGroups" -> "Accessgroups"),
-// so the schema keys are matched case-insensitively.
-func relationName(sch *schema.Schema, prefix string) string {
-	name := dairy.ToTitle(prefix)
-	if sch == nil {
-		return name
-	}
-	if _, ok := sch.Relationships.Relations[name]; ok {
-		return name
-	}
-	for candidate := range sch.Relationships.Relations {
-		if strings.EqualFold(candidate, name) {
-			return candidate
+func resolveQueryColumn(query *gorm.DB, key string, joined *[]string) (*gorm.DB, clause.Column, error) {
+	parts := strings.Split(key, ".")
+	switch len(parts) {
+	case 1:
+		field := query.Statement.Schema.LookUpField(parts[0])
+		if field == nil || field.DBName == "" {
+			return nil, clause.Column{}, fmt.Errorf("unknown column %q on %s", key, query.Statement.Schema.Name)
 		}
+		return query, clause.Column{Table: query.Statement.Table, Name: field.DBName}, nil
+	case 2:
+		if parts[0] == "" || parts[1] == "" {
+			return nil, clause.Column{}, fmt.Errorf("invalid related column %q", key)
+		}
+		relation, err := resolveRelation(query.Statement.Schema, parts[0])
+		if err != nil {
+			return nil, clause.Column{}, err
+		}
+		field := relation.FieldSchema.LookUpField(parts[1])
+		if field == nil || field.DBName == "" {
+			return nil, clause.Column{}, fmt.Errorf("unknown column %q on relation %s", parts[1], relation.Name)
+		}
+		if !slices.Contains(*joined, relation.Name) {
+			query = joinRelation(query, relation)
+			*joined = append(*joined, relation.Name)
+		}
+		return query, clause.Column{Table: relation.Name, Name: field.DBName}, nil
+	default:
+		return nil, clause.Column{}, fmt.Errorf("invalid related column %q", key)
 	}
-	return name
 }
 
-// joinRelation joins one relation, aliased by its name so dotted filters can
-// reference it. Many-to-many joins are built from the GORM relationship
-// metadata (join table, references), everything else inner-joins directly.
-func joinRelation(query *gorm.DB, name string) *gorm.DB {
-	relation, ok := query.Statement.Schema.Relationships.Relations[name]
-	if !ok || relation.Type != schema.Many2Many {
-		return query.Preload(name).InnerJoins(name)
+func resolveRelation(sch *schema.Schema, name string) (*schema.Relationship, error) {
+	if sch == nil {
+		return nil, fmt.Errorf("cannot resolve relation %q without a schema", name)
+	}
+	for candidate, relation := range sch.Relationships.Relations {
+		if strings.EqualFold(candidate, name) {
+			return relation, nil
+		}
+	}
+	return nil, fmt.Errorf("unknown relation %q on %s", name, sch.Name)
+}
+
+// joinRelation joins one schema-resolved relation. Many-to-many joins are
+// built from GORM metadata and bind tables and columns as structured clauses.
+func joinRelation(query *gorm.DB, relation *schema.Relationship) *gorm.DB {
+	if relation.Type != schema.Many2Many {
+		return query.Preload(relation.Name).InnerJoins(relation.Name)
 	}
 
 	joinTable := relation.JoinTable.Table
-	var onJoin, onTarget []string
+	joinSQL := "LEFT JOIN ? ON "
+	joinArgs := []any{clause.Table{Name: joinTable}}
+	targetSQL := "LEFT JOIN ? ON "
+	targetArgs := []any{clause.Table{Name: relation.FieldSchema.Table, Alias: relation.Name}}
+	var joinPredicates, targetPredicates []string
 	for _, ref := range relation.References {
 		if ref.OwnPrimaryKey {
-			onJoin = append(onJoin, fmt.Sprintf("%s.%s = %s.%s",
-				joinTable, ref.ForeignKey.DBName, query.Statement.Table, ref.PrimaryKey.DBName))
+			joinPredicates = append(joinPredicates, "? = ?")
+			joinArgs = append(joinArgs,
+				clause.Column{Table: joinTable, Name: ref.ForeignKey.DBName},
+				clause.Column{Table: query.Statement.Table, Name: ref.PrimaryKey.DBName},
+			)
 		} else {
-			onTarget = append(onTarget, fmt.Sprintf("%q.%s = %s.%s",
-				name, ref.PrimaryKey.DBName, joinTable, ref.ForeignKey.DBName))
+			targetPredicates = append(targetPredicates, "? = ?")
+			targetArgs = append(targetArgs,
+				clause.Column{Table: relation.Name, Name: ref.PrimaryKey.DBName},
+				clause.Column{Table: joinTable, Name: ref.ForeignKey.DBName},
+			)
 		}
 	}
-	return query.
-		Joins(fmt.Sprintf("LEFT JOIN %s ON %s", joinTable, strings.Join(onJoin, " AND "))).
-		Joins(fmt.Sprintf("LEFT JOIN %s %q ON %s", relation.FieldSchema.Table, name, strings.Join(onTarget, " AND ")))
+	joinSQL += strings.Join(joinPredicates, " AND ")
+	targetSQL += strings.Join(targetPredicates, " AND ")
+	return query.Joins(joinSQL, joinArgs...).Joins(targetSQL, targetArgs...)
 }
 
 // HydrateRelation preloads the relation when it has not been loaded yet.
@@ -104,7 +158,11 @@ func HydrateRelation(obj any, table string, relation any) error {
 	if err := requireCompletePrimaryKey(db, obj); err != nil {
 		return err
 	}
-	return db.Preload(table).First(obj).Error
+	name, err := validatedRelationName(db, obj, table)
+	if err != nil {
+		return err
+	}
+	return db.Preload(name).First(obj).Error
 }
 
 // HydrateManyToManyRelation preloads a many-to-many relation that has not
@@ -121,7 +179,23 @@ func HydrateManyToManyRelation[T any](obj any, table string, relation *[]T) erro
 	if err := requireCompletePrimaryKey(db, obj); err != nil {
 		return err
 	}
-	return db.Preload(table).First(obj).Error
+	name, err := validatedRelationName(db, obj, table)
+	if err != nil {
+		return err
+	}
+	return db.Preload(name).First(obj).Error
+}
+
+func validatedRelationName(db *gorm.DB, obj any, name string) (string, error) {
+	sch, err := parseSchema(db, obj)
+	if err != nil {
+		return "", err
+	}
+	relation, err := resolveRelation(sch, name)
+	if err != nil {
+		return "", err
+	}
+	return relation.Name, nil
 }
 
 // UpsertRelations upserts nested one-to-one relations of obj through their
@@ -214,7 +288,7 @@ func upsertRelation(tx *gorm.DB, writer DataWriter, resource interfaces.Resource
 		return writer.Create(resource)
 	}
 	probe := reflect.New(reflect.ValueOf(resource).Elem().Type()).Interface()
-	err := getOneBy(tx, probe, map[string]any{resource.PublicIdColumn(): publicId})
+	err := getOneByIdentity(tx, probe, resource.PublicIdColumn(), publicId)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return fmt.Errorf("no record for public id %s", publicId)
 	}
@@ -227,71 +301,70 @@ func upsertRelation(tx *gorm.DB, writer DataWriter, resource interfaces.Resource
 	return writer.Update(resource)
 }
 
-func addConditionPatern(query *gorm.DB, key string, value any, aliases map[string]string) *gorm.DB {
-	isOr := false
-	mainTable := query.Statement.Table
-	if str, isStr := value.(string); isStr {
-		if str, orFound := strings.CutPrefix(str, orPatern); orFound {
-			str, prefixFound := strings.CutPrefix(str, "%")
-			str, suffixFound := strings.CutSuffix(str, "%")
-			if prefixFound && suffixFound {
-				isOr = true
-				value = str
-			}
+func filterExpression(column clause.Column, value any) (clause.Expression, bool, error) {
+	alternative := false
+	if operator, ok := value.(OrOperator); ok {
+		alternative = true
+		value = operator.value
+		if _, nested := value.(OrOperator); nested {
+			return nil, false, errors.New("nested Or operators are invalid")
 		}
-	} else if arr, isArr := value.([]string); isArr && len(arr) > 0 && arr[0] == orPatern {
-		isOr = true
-		value = arr[1:]
 	}
 
-	if isOr {
-		return query.Or(searchPatern(key, value, mainTable, aliases))
+	if operator, ok := value.(LikeOperator); ok {
+		return clause.Like{Column: column, Value: "%" + operator.value + "%"}, alternative, nil
 	}
-	return query.Where(searchPatern(key, value, mainTable, aliases))
+	if _, ok := value.(clause.Expression); ok {
+		return nil, false, errors.New("raw GORM expressions are not filter values")
+	}
+	if isSliceOrArray(value) {
+		return clause.IN{Column: column, Values: sliceValues(value)}, alternative, nil
+	}
+	return clause.Eq{Column: column, Value: value}, alternative, nil
 }
 
-func searchPatern(key string, value any, mainTable string, aliases map[string]string) (string, any) {
-	if str, isStr := value.(string); isStr {
-		if str, likeFound := strings.CutPrefix(str, likePatern); likeFound {
-			str, prefixFound := strings.CutPrefix(str, "%")
-			str, suffixFound := strings.CutSuffix(str, "%")
-			if prefixFound && suffixFound {
-				return formatAlias(key, mainTable, aliases) + " LIKE ?", "%" + str + "%"
-			}
-		}
+func isSliceOrArray(value any) bool {
+	if value == nil {
+		return false
 	}
-
-	if dairy.IsArray(value) {
-		return formatAlias(key, mainTable, aliases) + " IN ?", value
-	}
-
-	return formatAlias(key, mainTable, aliases) + "=?", value
+	kind := reflect.TypeOf(value).Kind()
+	return kind == reflect.Slice || kind == reflect.Array
 }
 
-func addOrderBy(query *gorm.DB, values any) *gorm.DB {
-	switch v := values.(type) {
-	case []string:
-		for _, order := range v {
-			query.Order(order)
-		}
-	case string:
-		query.Order(v)
+func sliceValues(value any) []any {
+	rv := reflect.ValueOf(value)
+	values := make([]any, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		values[i] = rv.Index(i).Interface()
 	}
-	return query
+	return values
 }
 
-func formatAlias(str string, maintable string, aliases map[string]string) string {
-	if !strings.Contains(str, ".") {
-		return "\"" + str + "\""
+func addOrdering(query *gorm.DB, value any, joined *[]string) (*gorm.DB, error) {
+	var terms []Ordering
+	switch typed := value.(type) {
+	case Ordering:
+		terms = []Ordering{typed}
+	case []Ordering:
+		terms = typed
+	default:
+		return nil, fmt.Errorf("%s must contain Ordering values constructed by OrderBy", orderByPattern)
 	}
-	substr := strings.Split(str, ".")
-	alias := substr[0]
-	if alias != maintable {
-		if name, ok := aliases[strings.ToLower(alias)]; ok {
-			alias = name
-		} else {
-			alias = dairy.ToTitle(alias)
+	for _, term := range terms {
+		var column clause.Column
+		var err error
+		query, column, err = resolveQueryColumn(query, term.column, joined)
+		if err != nil {
+			return nil, fmt.Errorf("ordering: %w", err)
+		}
+		switch term.direction {
+		case Ascending:
+			query = query.Order(clause.OrderByColumn{Column: column})
+		case Descending:
+			query = query.Order(clause.OrderByColumn{Column: column, Desc: true})
+		default:
+			return nil, fmt.Errorf("invalid ordering direction %d", term.direction)
 		}
 	}
-	return "\"" + alias + "\"." + substr[1]
+	return query, nil
 }

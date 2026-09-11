@@ -40,7 +40,7 @@ func Authenticate(c *gin.Context, currentUser interfaces.Resource) {
 		return
 	}
 
-	if err := database.GetOneBy(currentUser, map[string]any{currentUser.PublicIdColumn(): subject}); err != nil {
+	if err := database.GetOneByIdentity(currentUser, currentUser.PublicIdColumn(), subject); err != nil {
 		respondUserLookupFailure(c, err)
 		return
 	}
