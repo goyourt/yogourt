@@ -589,7 +589,7 @@ curl -H "$USER_HEADER" localhost:8080/api/users   # 403 de nouveau
 
 ## Intégration avec l'authentification
 
-Après un `services.Authenticate` réussi, le sujet est attaché automatiquement : identité = claim `uuid` du JWT, avec l'ID SQL interne dans `Attributes["internal_id"]`. Un modèle utilisateur peut contrôler son propre sujet en implémentant :
+Après un `services.Authenticate` réussi, le sujet est attaché automatiquement : identité = identifiant public du modèle (claim `sub` du JWT), avec l'ID interne dans `Attributes["internal_id"]` quand le modèle implémente `interfaces.AuditActorProvider`. Un modèle utilisateur peut contrôler son propre sujet en implémentant :
 
 ```go
 func (u *User) AuthorizationSubject() authorization.Subject {
@@ -599,7 +599,7 @@ func (u *User) AuthorizationSubject() authorization.Subject {
 
 Une application avec sa propre authentification appelle `services.AttachSubject(c, subject)` après validation.
 
-Le Lot 0 du chantier a durci cette chaîne : algorithme JWT restreint à HS256, claim `uuid` validé, secret de 32 octets minimum vérifié au démarrage, et une panne de base pendant l'authentification répond 503 — jamais 401.
+Le Lot 0 du chantier a durci cette chaîne : algorithme JWT restreint à HS256, claim `sub` exigé non vide (chaîne opaque, sans validation de format), secret de 32 octets minimum vérifié au démarrage, et une panne de base pendant l'authentification répond 503 — jamais 401.
 
 ## Limites actuelles
 

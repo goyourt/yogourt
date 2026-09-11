@@ -1,6 +1,7 @@
 package database
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"slices"
@@ -12,142 +13,221 @@ import (
 	"github.com/goyourt/yogourt/services/providers"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"gorm.io/gorm/schema"
 )
 
 const likePatern = "LIKE"
 const orPatern = "OR"
 const orderByPatern = "orderBy"
 
-// JoinTables builds the query behind the read helpers: joins, conditions and
-// ordering derived from values. It returns the connection error when the
-// database is unreachable, since a query cannot be built without a
-// connection.
-func JoinTables[T interfaces.BaseInterface](values map[string]any, objType *T) (*gorm.DB, error) {
-	db, err := providers.GetDB()
-	if err != nil {
+// buildQuery derives joins, conditions and ordering from values.
+func buildQuery(db *gorm.DB, model any, values map[string]any) (*gorm.DB, error) {
+	query := db.Model(model)
+	if err := query.Statement.Parse(query.Statement.Model); err != nil {
 		return nil, err
 	}
-
-	query := db.Model(*objType)
-	query.Statement.Parse(query.Statement.Model)
-	joinedTables := []string{dairy.ToTitle(query.Statement.Table)}
+	joined := []string{dairy.ToTitle(query.Statement.Table)}
+	aliases := map[string]string{}
 	for key, value := range values {
 		if key == orderByPatern {
 			query = addOrderBy(query, value)
 			continue
 		}
 		if strings.Contains(key, ".") {
-			model := dairy.ToTitle(strings.Split(key, ".")[0])
-			if !slices.Contains(joinedTables, model) {
-				if tableName, isManyToMany := getMany2ManyTableName(*objType, model); isManyToMany {
-					query = joinManyToMany(query, model, tableName)
-				} else {
-					query = query.Preload(model).InnerJoins(model)
-				}
-				joinedTables = append(joinedTables, model)
+			prefix := strings.Split(key, ".")[0]
+			relation := relationName(query.Statement.Schema, prefix)
+			aliases[strings.ToLower(prefix)] = relation
+			if !slices.Contains(joined, relation) {
+				query = joinRelation(query, relation)
+				joined = append(joined, relation)
 			}
 		}
-
-		query = addConditionPatern(query, key, value)
+		query = addConditionPatern(query, key, value, aliases)
 	}
-
 	return query.Preload(clause.Associations), nil
 }
 
-// HydrateRelation preloads the relation when it has not been loaded yet. It
-// returns GORM's error; call sites that ignore it keep compiling.
-func HydrateRelation(obj interfaces.BaseInterface, table string, relation interfaces.BaseInterface, relationId int) error {
-	if relationId == 0 || !reflect.ValueOf(relation).IsNil() {
-		return nil
+// relationName resolves a filter prefix to the exact GORM relation name:
+// dairy.ToTitle lowercases interior capitals ("accessGroups" -> "Accessgroups"),
+// so the schema keys are matched case-insensitively.
+func relationName(sch *schema.Schema, prefix string) string {
+	name := dairy.ToTitle(prefix)
+	if sch == nil {
+		return name
+	}
+	if _, ok := sch.Relationships.Relations[name]; ok {
+		return name
+	}
+	for candidate := range sch.Relationships.Relations {
+		if strings.EqualFold(candidate, name) {
+			return candidate
+		}
+	}
+	return name
+}
+
+// joinRelation joins one relation, aliased by its name so dotted filters can
+// reference it. Many-to-many joins are built from the GORM relationship
+// metadata (join table, references), everything else inner-joins directly.
+func joinRelation(query *gorm.DB, name string) *gorm.DB {
+	relation, ok := query.Statement.Schema.Relationships.Relations[name]
+	if !ok || relation.Type != schema.Many2Many {
+		return query.Preload(name).InnerJoins(name)
 	}
 
+	joinTable := relation.JoinTable.Table
+	var onJoin, onTarget []string
+	for _, ref := range relation.References {
+		if ref.OwnPrimaryKey {
+			onJoin = append(onJoin, fmt.Sprintf("%s.%s = %s.%s",
+				joinTable, ref.ForeignKey.DBName, query.Statement.Table, ref.PrimaryKey.DBName))
+		} else {
+			onTarget = append(onTarget, fmt.Sprintf("%q.%s = %s.%s",
+				name, ref.PrimaryKey.DBName, joinTable, ref.ForeignKey.DBName))
+		}
+	}
+	return query.
+		Joins(fmt.Sprintf("LEFT JOIN %s ON %s", joinTable, strings.Join(onJoin, " AND "))).
+		Joins(fmt.Sprintf("LEFT JOIN %s %q ON %s", relation.FieldSchema.Table, name, strings.Join(onTarget, " AND ")))
+}
+
+// HydrateRelation preloads the relation when it has not been loaded yet.
+func HydrateRelation(obj any, table string, relation any) error {
+	rv := reflect.ValueOf(relation)
+	if rv.Kind() == reflect.Ptr && !rv.IsNil() {
+		return nil
+	}
 	db, err := providers.GetDB()
 	if err != nil {
 		return err
 	}
-
-	return db.Preload(table).Find(obj, obj.GetID()).Error
+	if err := requireCompletePrimaryKey(db, obj); err != nil {
+		return err
+	}
+	return db.Preload(table).First(obj).Error
 }
 
-// HydrateManyToManyRelation preloads a many-to-many relation that has not been
-// loaded yet. It returns GORM's error; call sites that ignore it keep
-// compiling.
-//
-// relation is a pointer to the slice field to fill. The guard tests the SLICE,
-// not the pointer: a caller passes &model.Field, whose address is never nil, so
-// testing the pointer made the helper return immediately every time and never
-// preload anything. A nil slice means "not loaded"; an allocated slice, even
-// empty, is left alone.
-func HydrateManyToManyRelation[T interfaces.BaseInterface](obj interfaces.BaseInterface, table string, relation *[]T) error {
+// HydrateManyToManyRelation preloads a many-to-many relation that has not
+// been loaded yet. relation points to the slice field to fill: a nil slice
+// means "not loaded", an allocated slice, even empty, is left alone.
+func HydrateManyToManyRelation[T any](obj any, table string, relation *[]T) error {
 	if relation == nil || *relation != nil {
 		return nil
 	}
-
 	db, err := providers.GetDB()
 	if err != nil {
 		return err
 	}
-
-	return db.Preload(table).Find(obj, obj.GetID()).Error
+	if err := requireCompletePrimaryKey(db, obj); err != nil {
+		return err
+	}
+	return db.Preload(table).First(obj).Error
 }
 
-func UpsertRelations(c *gin.Context, obj interfaces.BaseInterface, relations []string) error {
-	// TODO : upsert with many to many relations
-	objRef := reflect.ValueOf(obj)
+// UpsertRelations upserts nested one-to-one relations of obj through their
+// Get<Relation>/Set<Relation> methods, all in one transaction. Each relation
+// must implement interfaces.Resource. A present but unknown public id is an
+// error: an HTTP payload must never create an entity with a client-chosen
+// identifier.
+func UpsertRelations(c *gin.Context, obj any, relations []string) error {
 	dw := CreateDataWriter(c)
+	db, err := dw.connection()
+	if err != nil {
+		return err
+	}
+	return upsertRelations(db, dw, obj, relations)
+}
 
+func upsertRelations(db *gorm.DB, dw DataWriter, obj any, relations []string) error {
+	if _, err := structPointer(obj); err != nil {
+		return err
+	}
+	objRef := reflect.ValueOf(obj)
+
+	type pending struct {
+		name   string
+		value  interfaces.Resource
+		setter reflect.Value
+	}
+	var work []pending
 	for _, relation := range relations {
-		relationGetter := objRef.MethodByName("Get" + relation)
-		if !relationGetter.IsValid() {
-			return fmt.Errorf("Missing getter for relation %s", relation)
+		getter := objRef.MethodByName("Get" + relation)
+		if !getter.IsValid() {
+			return fmt.Errorf("missing getter for relation %s", relation)
 		}
-
-		results := relationGetter.Call(nil)
+		setter := objRef.MethodByName("Set" + relation)
+		if !setter.IsValid() {
+			return fmt.Errorf("missing setter for relation %s", relation)
+		}
+		results := getter.Call(nil)
 		if len(results) == 0 {
-			return fmt.Errorf("Getter for relation %s returned no value", relation)
+			return fmt.Errorf("getter for relation %s returned no value", relation)
 		}
 		val := results[0]
-		if !val.IsValid() || val.IsNil() {
+		if !val.IsValid() {
 			continue
 		}
-
-		relationInterface, ok := val.Interface().(interfaces.BaseInterface)
+		switch val.Kind() {
+		case reflect.Ptr, reflect.Interface:
+			if val.IsNil() {
+				continue
+			}
+		default:
+			return fmt.Errorf("getter for relation %s must return a pointer, got %s", relation, val.Kind())
+		}
+		resource, ok := capability[interfaces.Resource](val.Interface())
 		if !ok {
-			return fmt.Errorf("Getter for relation %s doesn't return BaseInterface", relation)
+			return fmt.Errorf("relation %s does not implement interfaces.Resource", relation)
 		}
-
-		relationUuid := relationInterface.GetUuid()
-		if relationUuid == "" {
-			if err := dw.Create(relationInterface); err != nil {
-				return fmt.Errorf("Unable to create relation %s: %w", relation, err)
-			}
-		} else {
-			if err := dw.Update(relationInterface); err != nil {
-				return fmt.Errorf("Unable to update relation %s: %w", relation, err)
-			}
-
-			if relationInterface.GetID() == 0 {
-				return fmt.Errorf("Unable to update relation %s: related object not found (uuid: %s)", relation, relationUuid)
-			}
+		if _, err := structPointer(resource); err != nil {
+			return fmt.Errorf("relation %s: %w", relation, err)
 		}
-
-		relationSetter := objRef.MethodByName("Set" + relation)
-		if !relationSetter.IsValid() {
-			return fmt.Errorf("Missing setter for relation %s", relation)
+		if setter.Type().NumIn() != 1 || !reflect.TypeOf(resource).AssignableTo(setter.Type().In(0)) {
+			return fmt.Errorf("setter for relation %s does not accept %T", relation, resource)
 		}
-
-		errors := relationSetter.Call([]reflect.Value{reflect.ValueOf(relationInterface)})
-		if len(errors) > 0 {
-			if err, ok := errors[0].Interface().(error); ok && err != nil {
-				return err
-			}
-		}
+		work = append(work, pending{relation, resource, setter})
+	}
+	if len(work) == 0 {
+		return nil
 	}
 
-	return nil
+	return db.Transaction(func(tx *gorm.DB) error {
+		txWriter := dw.withDB(tx)
+		for _, w := range work {
+			if err := upsertRelation(tx, txWriter, w.value); err != nil {
+				return fmt.Errorf("relation %s: %w", w.name, err)
+			}
+			outputs := w.setter.Call([]reflect.Value{reflect.ValueOf(w.value)})
+			for _, out := range outputs {
+				if err, ok := out.Interface().(error); ok && err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
 }
 
-func addConditionPatern(query *gorm.DB, key string, value any) *gorm.DB {
+func upsertRelation(tx *gorm.DB, writer DataWriter, resource interfaces.Resource) error {
+	publicId := resource.GetPublicId()
+	if publicId == "" {
+		return writer.Create(resource)
+	}
+	probe := reflect.New(reflect.ValueOf(resource).Elem().Type()).Interface()
+	err := getOneBy(tx, probe, map[string]any{resource.PublicIdColumn(): publicId})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf("no record for public id %s", publicId)
+	}
+	if err != nil {
+		return err
+	}
+	if err := copyPrimaryKeyFields(tx, probe, resource); err != nil {
+		return err
+	}
+	return writer.Update(resource)
+}
+
+func addConditionPatern(query *gorm.DB, key string, value any, aliases map[string]string) *gorm.DB {
 	isOr := false
 	mainTable := query.Statement.Table
 	if str, isStr := value.(string); isStr {
@@ -159,118 +239,59 @@ func addConditionPatern(query *gorm.DB, key string, value any) *gorm.DB {
 				value = str
 			}
 		}
-	} else if dairy.IsArray(value) {
-		if len(value.([]string)) > 0 {
-			if value.([]string)[0] == orPatern {
-				isOr = true
-				value = value.([]string)[1:]
-			}
-		}
+	} else if arr, isArr := value.([]string); isArr && len(arr) > 0 && arr[0] == orPatern {
+		isOr = true
+		value = arr[1:]
 	}
 
 	if isOr {
-		return query.Or(searchPatern(key, value, mainTable))
+		return query.Or(searchPatern(key, value, mainTable, aliases))
 	}
-	return query.Where(searchPatern(key, value, mainTable))
+	return query.Where(searchPatern(key, value, mainTable, aliases))
 }
 
-func searchPatern(key string, value any, mainTable string) (string, any) {
+func searchPatern(key string, value any, mainTable string, aliases map[string]string) (string, any) {
 	if str, isStr := value.(string); isStr {
 		if str, likeFound := strings.CutPrefix(str, likePatern); likeFound {
 			str, prefixFound := strings.CutPrefix(str, "%")
 			str, suffixFound := strings.CutSuffix(str, "%")
 			if prefixFound && suffixFound {
-				return formatAlias(key, mainTable) + " LIKE ?", "%" + str + "%"
+				return formatAlias(key, mainTable, aliases) + " LIKE ?", "%" + str + "%"
 			}
 		}
 	}
 
 	if dairy.IsArray(value) {
-		return formatAlias(key, mainTable) + " IN ?", value
+		return formatAlias(key, mainTable, aliases) + " IN ?", value
 	}
 
-	return formatAlias(key, mainTable) + "=?", value
+	return formatAlias(key, mainTable, aliases) + "=?", value
 }
 
 func addOrderBy(query *gorm.DB, values any) *gorm.DB {
-	vType := reflect.TypeOf(values)
-	if vType == nil {
-		return query
-	}
-
-	if dairy.IsArray(values) {
-		for _, order := range values.([]string) {
+	switch v := values.(type) {
+	case []string:
+		for _, order := range v {
 			query.Order(order)
 		}
-	} else {
-		query.Order(values)
+	case string:
+		query.Order(v)
 	}
 	return query
 }
 
-func formatAlias(str string, maintable string) string {
+func formatAlias(str string, maintable string, aliases map[string]string) string {
 	if !strings.Contains(str, ".") {
 		return "\"" + str + "\""
 	}
 	substr := strings.Split(str, ".")
 	alias := substr[0]
 	if alias != maintable {
-		alias = dairy.ToTitle(alias)
-	}
-	return "\"" + alias + "\"." + substr[1]
-}
-
-func resetId(obj interfaces.BaseInterface) {
-	value := reflect.ValueOf(obj)
-	field := value.Elem().FieldByName("ID")
-	field.Set(reflect.Zero(field.Type()))
-}
-
-func getMany2ManyTableName(obj interfaces.BaseInterface, fieldName string) (string, bool) {
-	t := reflect.TypeOf(obj)
-	if t == nil {
-		return "", false
-	}
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
-	if t.Kind() != reflect.Struct {
-		return "", false
-	}
-
-	f, ok := t.FieldByName(fieldName)
-	if !ok {
-		return "", false
-	}
-
-	g := f.Tag.Get("gorm")
-	if g == "" {
-		return "", false
-	}
-
-	for _, part := range strings.Split(g, ";") {
-		part = strings.TrimSpace(part)
-		if strings.HasPrefix(part, "many2many:") {
-			val := strings.TrimPrefix(part, "many2many:")
-			val = strings.Trim(val, `"`)
-			return val, true
+		if name, ok := aliases[strings.ToLower(alias)]; ok {
+			alias = name
+		} else {
+			alias = dairy.ToTitle(alias)
 		}
 	}
-	return "", false
-}
-
-func joinManyToMany(query *gorm.DB, model string, tableName string) *gorm.DB {
-	tables := strings.Split(tableName, "_")
-	from, to := tables[0], tables[1]
-
-	return query.
-		Joins(fmt.Sprintf("LEFT JOIN %s ON %s.id = %s.%s_id", tableName, asTableName(from), tableName, from)).
-		Joins(fmt.Sprintf("LEFT JOIN %s \"%s\" ON \"%s\".id = %s.%s_id", asTableName(to), model, model, tableName, to))
-}
-
-func asTableName(table string) string {
-	if strings.HasSuffix(table, "s") {
-		return table
-	}
-	return table + "s"
+	return "\"" + alias + "\"." + substr[1]
 }
