@@ -1,0 +1,87 @@
+id,level,module,version,fixed_version,summary,aliases,url
+GO-2025-3503,package,stdlib,v1.24.0,v1.24.1,HTTP Proxy bypass using IPv6 Zone IDs in golang.org/x/net,CVE-2025-22870; GHSA-qxp5-gwg8-xv66,https://pkg.go.dev/vuln/GO-2025-3503
+GO-2025-3563,symbol,stdlib,v1.24.0,v1.24.2,Request smuggling due to acceptance of invalid chunked data in net/http,CVE-2025-22871,https://pkg.go.dev/vuln/GO-2025-3563
+GO-2025-3749,symbol,stdlib,v1.24.0,v1.24.4,Usage of ExtKeyUsageAny disables policy validation in crypto/x509,CVE-2025-22874,https://pkg.go.dev/vuln/GO-2025-3749
+GO-2025-3750,symbol,stdlib,v1.24.0,v1.24.4,Inconsistent handling of O_CREATE|O_EXCL on Unix and Windows in os in syscall,CVE-2025-0913,https://pkg.go.dev/vuln/GO-2025-3750
+GO-2025-3751,package,stdlib,v1.24.0,v1.24.4,Sensitive headers not cleared on cross-origin redirect in net/http,CVE-2025-4673,https://pkg.go.dev/vuln/GO-2025-3751
+GO-2025-3849,symbol,stdlib,v1.24.0,v1.24.6,Incorrect results returned from Rows.Scan in database/sql,CVE-2025-47907,https://pkg.go.dev/vuln/GO-2025-3849
+GO-2025-3956,package,stdlib,v1.24.0,v1.24.6,Unexpected paths returned from LookPath in os/exec,CVE-2025-47906,https://pkg.go.dev/vuln/GO-2025-3956
+GO-2025-4006,symbol,stdlib,v1.24.0,v1.24.8,Excessive CPU consumption in ParseAddress in net/mail,CVE-2025-61725,https://pkg.go.dev/vuln/GO-2025-4006
+GO-2025-4007,symbol,stdlib,v1.24.0,v1.24.9,Quadratic complexity when checking name constraints in crypto/x509,CVE-2025-58187,https://pkg.go.dev/vuln/GO-2025-4007
+GO-2025-4008,symbol,stdlib,v1.24.0,v1.24.8,ALPN negotiation error contains attacker controlled information in crypto/tls,CVE-2025-58189,https://pkg.go.dev/vuln/GO-2025-4008
+GO-2025-4009,symbol,stdlib,v1.24.0,v1.24.8,Quadratic complexity when parsing some invalid inputs in encoding/pem,CVE-2025-61723,https://pkg.go.dev/vuln/GO-2025-4009
+GO-2025-4010,symbol,stdlib,v1.24.0,v1.24.8,Insufficient validation of bracketed IPv6 hostnames in net/url,CVE-2025-47912,https://pkg.go.dev/vuln/GO-2025-4010
+GO-2025-4011,symbol,stdlib,v1.24.0,v1.24.8,Parsing DER payload can cause memory exhaustion in encoding/asn1,CVE-2025-58185,https://pkg.go.dev/vuln/GO-2025-4011
+GO-2025-4012,package,stdlib,v1.24.0,v1.24.8,Lack of limit when parsing cookies can cause memory exhaustion in net/http,CVE-2025-58186,https://pkg.go.dev/vuln/GO-2025-4012
+GO-2025-4013,symbol,stdlib,v1.24.0,v1.24.8,Panic when validating certificates with DSA public keys in crypto/x509,CVE-2025-58188,https://pkg.go.dev/vuln/GO-2025-4013
+GO-2025-4014,module,stdlib,v1.24.0,v1.24.8,Unbounded allocation when parsing GNU sparse map in archive/tar,CVE-2025-58183,https://pkg.go.dev/vuln/GO-2025-4014
+GO-2025-4015,package,stdlib,v1.24.0,v1.24.8,Excessive CPU consumption in Reader.ReadResponse in net/textproto,CVE-2025-61724,https://pkg.go.dev/vuln/GO-2025-4015
+GO-2025-4116,module,golang.org/x/crypto,v0.39.0,v0.43.0,Potential denial of service in golang.org/x/crypto/ssh/agent,CVE-2025-47913,https://pkg.go.dev/vuln/GO-2025-4116
+GO-2025-4134,module,golang.org/x/crypto,v0.39.0,v0.45.0,Unbounded memory consumption in golang.org/x/crypto/ssh,CVE-2025-58181; GHSA-j5w8-q4qc-rx2x,https://pkg.go.dev/vuln/GO-2025-4134
+GO-2025-4135,module,golang.org/x/crypto,v0.39.0,v0.45.0,Malformed constraint may cause denial of service in golang.org/x/crypto/ssh/agent,CVE-2025-47914; GHSA-f6x5-jh6r-wrfv,https://pkg.go.dev/vuln/GO-2025-4135
+GO-2025-4155,symbol,stdlib,v1.24.0,v1.24.11,Excessive resource consumption when printing error string for host certificate validation in crypto/x509,CVE-2025-61729,https://pkg.go.dev/vuln/GO-2025-4155
+GO-2025-4175,symbol,stdlib,v1.24.0,v1.24.11,Improper application of excluded DNS name constraints when verifying wildcard names in crypto/x509,CVE-2025-61727,https://pkg.go.dev/vuln/GO-2025-4175
+GO-2026-4337,symbol,stdlib,v1.24.0,v1.24.13,Unexpected session resumption in crypto/tls,CVE-2025-68121,https://pkg.go.dev/vuln/GO-2026-4337
+GO-2026-4340,symbol,stdlib,v1.24.0,v1.24.12,Handshake messages may be processed at the incorrect encryption level in crypto/tls,CVE-2025-61730,https://pkg.go.dev/vuln/GO-2026-4340
+GO-2026-4341,symbol,stdlib,v1.24.0,v1.24.12,Memory exhaustion in query parameter parsing in net/url,CVE-2025-61726,https://pkg.go.dev/vuln/GO-2026-4341
+GO-2026-4342,module,stdlib,v1.24.0,v1.24.12,Excessive CPU consumption when building archive index in archive/zip,CVE-2025-61728,https://pkg.go.dev/vuln/GO-2026-4342
+GO-2026-4403,package,stdlib,v1.24.0,v1.24.3,Improper access to parent directory of root in os,CVE-2025-22873,https://pkg.go.dev/vuln/GO-2026-4403
+GO-2026-4440,package,golang.org/x/net,v0.41.0,v0.45.0,Quadratic parsing complexity in golang.org/x/net/html,CVE-2025-47911,https://pkg.go.dev/vuln/GO-2026-4440
+GO-2026-4441,package,golang.org/x/net,v0.41.0,v0.45.0,Infinite parsing loop in golang.org/x/net,CVE-2025-58190,https://pkg.go.dev/vuln/GO-2026-4441
+GO-2026-4601,symbol,stdlib,v1.24.0,v1.25.8,Incorrect parsing of IPv6 host literals in net/url,CVE-2026-25679,https://pkg.go.dev/vuln/GO-2026-4601
+GO-2026-4602,package,stdlib,v1.24.0,v1.25.8,FileInfo can escape from a Root in os,CVE-2026-27139,https://pkg.go.dev/vuln/GO-2026-4602
+GO-2026-4603,package,stdlib,v1.24.0,v1.25.8,URLs in meta content attribute actions are not escaped in html/template,CVE-2026-27142,https://pkg.go.dev/vuln/GO-2026-4603
+GO-2026-4771,package,github.com/jackc/pgx/v5,v5.6.0,v5.9.0,CVE-2026-33815 in github.com/jackc/pgx,CVE-2026-33815; GHSA-xgrm-4fwx-7qm8,https://pkg.go.dev/vuln/GO-2026-4771
+GO-2026-4772,package,github.com/jackc/pgx/v5,v5.6.0,v5.9.0,CVE-2026-33816 in github.com/jackc/pgx,CVE-2026-33816; GHSA-9jj7-4m8r-rfcm,https://pkg.go.dev/vuln/GO-2026-4772
+GO-2026-4864,package,stdlib,v1.24.0,v1.25.9,TOCTOU permits root escape on Linux via Root.Chmod in os in internal/syscall/unix,CVE-2026-32282,https://pkg.go.dev/vuln/GO-2026-4864
+GO-2026-4865,symbol,stdlib,v1.24.0,v1.25.9,JsBraceDepth Context Tracking Bugs (XSS) in html/template,CVE-2026-32289,https://pkg.go.dev/vuln/GO-2026-4865
+GO-2026-4869,module,stdlib,v1.24.0,v1.25.9,Unbounded allocation for old GNU sparse in archive/tar,CVE-2026-32288,https://pkg.go.dev/vuln/GO-2026-4869
+GO-2026-4870,symbol,stdlib,v1.24.0,v1.25.9,Unauthenticated TLS 1.3 KeyUpdate record can cause persistent connection retention and DoS in crypto/tls,CVE-2026-32283,https://pkg.go.dev/vuln/GO-2026-4870
+GO-2026-4918,package,golang.org/x/net,v0.41.0,v0.53.0,Infinite loop in HTTP/2 transport when given bad SETTINGS_MAX_FRAME_SIZE in net/http/internal/http2 in golang.org/x/net,CVE-2026-33814,https://pkg.go.dev/vuln/GO-2026-4918
+GO-2026-4946,symbol,stdlib,v1.24.0,v1.25.9,Inefficient policy validation in crypto/x509,CVE-2026-32281,https://pkg.go.dev/vuln/GO-2026-4946
+GO-2026-4947,symbol,stdlib,v1.24.0,v1.25.9,Unexpected work during chain building in crypto/x509,CVE-2026-32280,https://pkg.go.dev/vuln/GO-2026-4947
+GO-2026-4970,package,stdlib,v1.24.0,v1.25.12,Root escape via symlink plus trailing slash in os,CVE-2026-39822,https://pkg.go.dev/vuln/GO-2026-4970
+GO-2026-4971,symbol,stdlib,v1.24.0,v1.25.10,Panic in Dial and LookupPort when handling NUL byte on Windows in net,CVE-2026-39836,https://pkg.go.dev/vuln/GO-2026-4971
+GO-2026-4976,package,stdlib,v1.24.0,v1.25.10,ReverseProxy forwards queries with more than urlmaxqueryparams parameters in net/http/httputil,CVE-2026-39825,https://pkg.go.dev/vuln/GO-2026-4976
+GO-2026-4977,symbol,stdlib,v1.24.0,v1.25.10,Quadratic string concatenation in consumePhrase in net/mail,CVE-2026-42499,https://pkg.go.dev/vuln/GO-2026-4977
+GO-2026-4980,package,stdlib,v1.24.0,v1.25.10,Escaper bypass leads to XSS in html/template,CVE-2026-39826,https://pkg.go.dev/vuln/GO-2026-4980
+GO-2026-4981,package,stdlib,v1.24.0,v1.25.10,Crash when handling long CNAME response in net,CVE-2026-33811,https://pkg.go.dev/vuln/GO-2026-4981
+GO-2026-4982,package,stdlib,v1.24.0,v1.25.10,Bypass of meta content URL escaping causes XSS in html/template,CVE-2026-39823,https://pkg.go.dev/vuln/GO-2026-4982
+GO-2026-4986,symbol,stdlib,v1.24.0,v1.25.10,Quadratic string concatentation in consumeComment in net/mail,CVE-2026-39820,https://pkg.go.dev/vuln/GO-2026-4986
+GO-2026-5004,symbol,github.com/jackc/pgx/v5,v5.6.0,v5.9.2,SQL Injection via placeholder confusion with dollar quoted string literals in github.com/jackc/pgx,CVE-2026-41889; GHSA-j88v-2chj-qfwx,https://pkg.go.dev/vuln/GO-2026-5004
+GO-2026-5005,module,golang.org/x/crypto,v0.39.0,v0.52.0,Invoking key constraints not enforced in golang.org/x/crypto/ssh/agent,CVE-2026-39833; GHSA-jppx-rxg9-jmrx,https://pkg.go.dev/vuln/GO-2026-5005
+GO-2026-5006,module,golang.org/x/crypto,v0.39.0,v0.52.0,Invoking agent constraints dropped when forwarding keys in golang.org/x/crypto/ssh/agent,CVE-2026-39832; GHSA-f5wc-c3c7-36mc,https://pkg.go.dev/vuln/GO-2026-5006
+GO-2026-5013,module,golang.org/x/crypto,v0.39.0,v0.52.0,Invoking byte arithmetic causes underflow and panic in golang.org/x/crypto/ssh,CVE-2026-46597,https://pkg.go.dev/vuln/GO-2026-5013
+GO-2026-5014,module,golang.org/x/crypto,v0.39.0,v0.52.0,Invoking bypass of certificate restrictions in golang.org/x/crypto/ssh,CVE-2026-39828,https://pkg.go.dev/vuln/GO-2026-5014
+GO-2026-5015,module,golang.org/x/crypto,v0.39.0,v0.52.0,Invoking server panic during CheckHostKey/Authenticate in golang.org/x/crypto/ssh,CVE-2026-39835,https://pkg.go.dev/vuln/GO-2026-5015
+GO-2026-5016,module,golang.org/x/crypto,v0.39.0,v0.52.0,Invoking memory leak when rejecting channels can lead to DoS in golang.org/x/crypto/ssh,CVE-2026-39827,https://pkg.go.dev/vuln/GO-2026-5016
+GO-2026-5017,module,golang.org/x/crypto,v0.39.0,v0.52.0,Invoking client can cause server deadlock on unexpected responses in golang.org/x/crypto/ssh,CVE-2026-39830,https://pkg.go.dev/vuln/GO-2026-5017
+GO-2026-5018,module,golang.org/x/crypto,v0.39.0,v0.52.0,Invoking pathological RSA/DSA parameters may cause DoS in golang.org/x/crypto/ssh,CVE-2026-39829,https://pkg.go.dev/vuln/GO-2026-5018
+GO-2026-5019,module,golang.org/x/crypto,v0.39.0,v0.52.0,Invoking bypass of FIDO/U2F security keys physical interaction in golang.org/x/crypto/ssh,CVE-2026-39831,https://pkg.go.dev/vuln/GO-2026-5019
+GO-2026-5020,module,golang.org/x/crypto,v0.39.0,v0.52.0,Invoking infinite loop on large channel writes in golang.org/x/crypto/ssh,CVE-2026-39834,https://pkg.go.dev/vuln/GO-2026-5020
+GO-2026-5021,module,golang.org/x/crypto,v0.39.0,v0.52.0,Invoking auth bypass via unenforced @revoked status in golang.org/x/crypto/ssh/knownhosts,CVE-2026-42508; GHSA-5cgq-3rg8-m6cv,https://pkg.go.dev/vuln/GO-2026-5021
+GO-2026-5023,module,golang.org/x/crypto,v0.39.0,v0.52.0,Invoking VerifiedPublicKeyCallback permissions skip enforcement in golang.org/x/crypto/ssh,CVE-2026-46595,https://pkg.go.dev/vuln/GO-2026-5023
+GO-2026-5024,module,golang.org/x/sys,v0.33.0,v0.44.0,Invoking integer overflow in NewNTUnicodeString in golang.org/x/sys/windows,CVE-2026-39824,https://pkg.go.dev/vuln/GO-2026-5024
+GO-2026-5025,package,golang.org/x/net,v0.41.0,v0.55.0,Invoking incorrect handling of namespaced elements in foreign content in golang.org/x/net/html,CVE-2026-42506,https://pkg.go.dev/vuln/GO-2026-5025
+GO-2026-5026,package,golang.org/x/net,v0.41.0,v0.55.0,Invoking failure to reject ASCII-only Punycode-encoded labels in golang.org/x/net/idna,CVE-2026-39821,https://pkg.go.dev/vuln/GO-2026-5026
+GO-2026-5027,package,golang.org/x/net,v0.41.0,v0.55.0,Invoking incorrect handling of HTML elements in foreign content in golang.org/x/net/html,CVE-2026-42502,https://pkg.go.dev/vuln/GO-2026-5027
+GO-2026-5028,package,golang.org/x/net,v0.41.0,v0.55.0,Invoking denial of service when parsing arbitrary HTML in golang.org/x/net/html,CVE-2026-25680,https://pkg.go.dev/vuln/GO-2026-5028
+GO-2026-5029,package,golang.org/x/net,v0.41.0,v0.55.0,Invoking incorrect handling of character references in DOCTYPE nodes in golang.org/x/net/html,CVE-2026-25681,https://pkg.go.dev/vuln/GO-2026-5029
+GO-2026-5030,package,golang.org/x/net,v0.41.0,v0.55.0,Invoking duplicate attributes can cause XSS in golang.org/x/net/html,CVE-2026-27136,https://pkg.go.dev/vuln/GO-2026-5030
+GO-2026-5033,module,golang.org/x/crypto,v0.39.0,v0.52.0,Invoking pathological inputs can lead to client panic in golang.org/x/crypto/ssh/agent,CVE-2026-46598,https://pkg.go.dev/vuln/GO-2026-5033
+GO-2026-5037,symbol,stdlib,v1.24.0,v1.25.11,Inefficient candidate hostname parsing in crypto/x509,CVE-2026-27145,https://pkg.go.dev/vuln/GO-2026-5037
+GO-2026-5038,package,stdlib,v1.24.0,v1.25.11,Quadratic complexity in WordDecoder.DecodeHeader in mime,CVE-2026-42504,https://pkg.go.dev/vuln/GO-2026-5038
+GO-2026-5039,symbol,stdlib,v1.24.0,v1.25.11,Arbitrary inputs are included in errors without any escaping in net/textproto,CVE-2026-42507,https://pkg.go.dev/vuln/GO-2026-5039
+GO-2026-5856,symbol,stdlib,v1.24.0,v1.25.12,Invoking Encrypted Client Hello privacy leak in crypto/tls,CVE-2026-42505,https://pkg.go.dev/vuln/GO-2026-5856
+GO-2026-5932,module,golang.org/x/crypto,v0.39.0,,"The golang.org/x/crypto/openpgp package is unmaintained, unsafe by design, and has known security issues",,https://pkg.go.dev/vuln/GO-2026-5932
+GO-2026-5942,module,golang.org/x/net,v0.41.0,v0.56.0,Parsing an invalid SVCB or HTTPS RR can panic in golang.org/x/net/dns/dnsmessage,CVE-2026-46600,https://pkg.go.dev/vuln/GO-2026-5942
+GO-2026-5970,symbol,golang.org/x/text,v0.26.0,v0.39.0,Infinite loop on invalid input in golang.org/x/text,CVE-2026-56852,https://pkg.go.dev/vuln/GO-2026-5970
+GO-2026-5972,symbol,stdlib,v1.24.0,v1.25.13,Enforce maximum recursion depth in encoding/asn1,CVE-2026-33818,https://pkg.go.dev/vuln/GO-2026-5972
+GO-2026-6088,symbol,stdlib,v1.24.0,v1.25.13,Add recursion depth guard during decode in encoding/xml,CVE-2026-56859,https://pkg.go.dev/vuln/GO-2026-6088
+GO-2026-6089,symbol,stdlib,v1.24.0,v1.25.13,Apply ReadHeaderTimeout when doing unencrypted HTTP/2 check in net/http,CVE-2026-56853,https://pkg.go.dev/vuln/GO-2026-6089
+GO-2026-6090,symbol,stdlib,v1.24.0,v1.25.13,Limit handshake messages we are willing to accept post-handshake in crypto/tls,CVE-2026-56862,https://pkg.go.dev/vuln/GO-2026-6090
+GO-2026-6091,package,stdlib,v1.24.0,v1.25.13,Fix Javascript regexp context tracking in html/template,CVE-2026-56858,https://pkg.go.dev/vuln/GO-2026-6091
+GO-2026-6218,package,stdlib,v1.24.0,v1.25.13,Avoid quadratic complexity in resolvePath in net/url,CVE-2026-56860,https://pkg.go.dev/vuln/GO-2026-6218
+GO-2026-6303,module,golang.org/x/crypto,v0.39.0,v0.55.0,Source-address critical option not enforced for non-public-key auth callbacks in golang.org/x/crypto/ssh,CVE-2026-56854,https://pkg.go.dev/vuln/GO-2026-6303
+GO-2026-6354,module,golang.org/x/crypto,v0.39.0,v0.56.0,Prevent DoS on deadlocked undecided channel in golang.org/x/crypto/ssh,CVE-2026-78662,https://pkg.go.dev/vuln/GO-2026-6354
+GO-2026-6355,module,golang.org/x/crypto,v0.39.0,v0.56.0,Prevent DoS on deadlocked established channel in golang.org/x/crypto/ssh,CVE-2026-56855,https://pkg.go.dev/vuln/GO-2026-6355
