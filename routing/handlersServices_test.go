@@ -67,3 +67,19 @@ func TestHandleRequestRejectsInvalidJSON(t *testing.T) {
 		t.Errorf("expected 422, got %d", w.Code)
 	}
 }
+
+func TestHandleRequestReportsOversizedJSON(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"values":[]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Request.Body = http.MaxBytesReader(w, c.Request.Body, 8)
+
+	if HandleRequest(c, &sliceRequest{}) {
+		t.Fatal("expected an oversized body to be refused")
+	}
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("expected 413, got %d", w.Code)
+	}
+}

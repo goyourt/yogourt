@@ -16,6 +16,11 @@ import (
 // bound as-is.
 func HandleRequest(c *gin.Context, req any) bool {
 	if err := c.ShouldBindJSON(req); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			RespondAndAbort(c, http.StatusRequestEntityTooLarge, "Request body too large")
+			return false
+		}
 		RespondAndAbort(c, 422, "Invalid request: argument mismatch")
 		return false
 	}

@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"mime/multipart"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -15,6 +16,8 @@ import (
 	"github.com/goyourt/yogourt/interfaces"
 	"github.com/goyourt/yogourt/services/providers"
 )
+
+const requestBodyLimitKey = "yogourt.request_body_limit"
 
 func SaveFile(f interfaces.FileInterface) {
 	cfg := providers.GetConfigByFileType(f.GetType())
@@ -69,8 +72,37 @@ func SerializeFile(file multipart.File) (string, error) {
 
 func ReadUploadedFile(c *gin.Context, field string, fileType string) (interfaces.FileInterface, error) {
 	cfg := providers.GetConfigByFileType(fileType)
-	file, fileHeader, err := c.Request.FormFile(field)
+	bodyLimit, err := providers.GetMainConfig().Server.RequestBodyLimit()
+	if err != nil {
+		return &interfaces.File{}, err
+	}
+	return readUploadedFile(c, field, fileType, cfg, bodyLimit)
+}
+
+func readUploadedFile(c *gin.Context, field string, fileType string, cfg providers.FileOptions, bodyLimit int64) (interfaces.FileInterface, error) {
 	fileInterface := &interfaces.File{}
+	if c == nil || c.Request == nil {
+		return fileInterface, fmt.Errorf("cannot read %s without an HTTP request", field)
+	}
+	if bodyLimit <= 0 {
+		return fileInterface, fmt.Errorf("request body limit must be positive")
+	}
+	if cfg.MaxFileSize == nil || *cfg.MaxFileSize <= 0 {
+		return fileInterface, fmt.Errorf("files.%s.max_file_size must be positive", fileType)
+	}
+	if cfg.FileFolder == nil || strings.TrimSpace(*cfg.FileFolder) == "" {
+		return fileInterface, fmt.Errorf("files.%s.file_folder must not be empty", fileType)
+	}
+
+	if c.Request.MultipartForm != nil && !requestHasBodyLimit(c, bodyLimit) {
+		return fileInterface, fmt.Errorf("multipart body was parsed before ReadUploadedFile could apply its size limit")
+	}
+	if c.Request.ContentLength > bodyLimit {
+		return fileInterface, &http.MaxBytesError{Limit: bodyLimit}
+	}
+	applyRequestBodyLimit(c, bodyLimit)
+
+	file, fileHeader, err := c.Request.FormFile(field)
 	if err != nil {
 		return fileInterface, err
 	}
@@ -104,6 +136,20 @@ func ReadUploadedFile(c *gin.Context, field string, fileType string) (interfaces
 	fileInterface.SetType(fileType)
 
 	return fileInterface, nil
+}
+
+func requestHasBodyLimit(c *gin.Context, maximum int64) bool {
+	applied, exists := c.Get(requestBodyLimitKey)
+	limit, ok := applied.(int64)
+	return exists && ok && limit > 0 && limit <= maximum
+}
+
+func applyRequestBodyLimit(c *gin.Context, limit int64) {
+	if requestHasBodyLimit(c, limit) || c.Request.Body == nil {
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
+	c.Set(requestBodyLimitKey, limit)
 }
 
 func fileExtension(filename string) string {
