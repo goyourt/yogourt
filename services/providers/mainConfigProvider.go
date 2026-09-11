@@ -70,6 +70,8 @@ type MainConfig struct {
 
 	Security struct {
 		SecretKey                   string `yaml:"secret_key"`
+		TokenIssuer                 string `yaml:"token_issuer"`
+		TokenAudience               string `yaml:"token_audience"`
 		HashCost                    int    `yaml:"hash_cost"`
 		TokenExpires                int    `yaml:"token_expires"`
 		PasswordMinimumLength       int    `yaml:"password_minimum_length"`

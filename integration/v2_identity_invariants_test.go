@@ -21,6 +21,8 @@ import (
 )
 
 const integrationSecret = "this-secret-key-is-at-least-32-bytes-long"
+const integrationIssuer = "https://auth.integration.example"
+const integrationAudience = "yogourt-integration-api"
 
 // authSubjectUser deliberately does not use the conventional uuid column.
 // Authentication has to load it using PublicIdColumn, not a hard-coded name.
@@ -92,8 +94,10 @@ func configureIntegrationDatabase(t *testing.T) {
   ssl_mode: %q
 security:
   secret_key: %q
+  token_issuer: %q
+  token_audience: %q
   token_expires: 60
-`, values["host"], port, values["user"], values["password"], values["dbname"], values["sslmode"], integrationSecret)
+`, values["host"], port, values["user"], values["password"], values["dbname"], values["sslmode"], integrationSecret, integrationIssuer, integrationAudience)
 	if err := os.WriteFile(filepath.Join(dir, "configs", "yogourt.yaml"), []byte(config), 0o600); err != nil {
 		t.Fatalf("write test config: %v", err)
 	}
@@ -138,6 +142,8 @@ func TestV2IdentityAndRequestInvariants(t *testing.T) {
 	legacy := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"uuid": *user.Subject,
 		"exp":  time.Now().Add(time.Hour).Unix(),
+		"iss":  integrationIssuer,
+		"aud":  integrationAudience,
 	})
 	legacyText, err := legacy.SignedString([]byte(integrationSecret))
 	if err != nil {

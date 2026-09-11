@@ -29,6 +29,28 @@ func ValidateSecretKey(secret string) error {
 	return nil
 }
 
+// ValidateTokenConfig checks every setting required to issue and validate a
+// JWT for this application.
+func ValidateTokenConfig(config *providers.MainConfig) error {
+	if config == nil {
+		return fmt.Errorf("JWT configuration must not be nil")
+	}
+	if err := ValidateSecretKey(config.Security.SecretKey); err != nil {
+		return err
+	}
+	if strings.TrimSpace(config.Security.TokenIssuer) == "" {
+		return fmt.Errorf("JWT issuer must not be empty")
+	}
+	if strings.TrimSpace(config.Security.TokenAudience) == "" {
+		return fmt.Errorf("JWT audience must not be empty")
+	}
+	if config.Security.TokenExpires <= 0 {
+		return fmt.Errorf("JWT token expiration must be greater than zero minutes")
+	}
+
+	return nil
+}
+
 func CreateToken(subject string) (string, error) {
 	if subject == "" {
 		return "", fmt.Errorf("token subject must not be empty")
@@ -36,7 +58,7 @@ func CreateToken(subject string) (string, error) {
 
 	config := providers.GetMainConfig()
 
-	if err := ValidateSecretKey(config.Security.SecretKey); err != nil {
+	if err := ValidateTokenConfig(config); err != nil {
 		return "", err
 	}
 
@@ -44,6 +66,8 @@ func CreateToken(subject string) (string, error) {
 		jwt.MapClaims{
 			subjectClaim: subject,
 			"exp":        time.Now().Add(time.Minute * time.Duration(config.Security.TokenExpires)).Unix(),
+			"iss":        config.Security.TokenIssuer,
+			"aud":        config.Security.TokenAudience,
 		})
 
 	tokenString, err := token.SignedString([]byte(config.Security.SecretKey))
@@ -57,13 +81,18 @@ func CreateToken(subject string) (string, error) {
 func ValidToken(tokenString string) (*jwt.Token, error) {
 	config := providers.GetMainConfig()
 
-	if err := ValidateSecretKey(config.Security.SecretKey); err != nil {
+	if err := ValidateTokenConfig(config); err != nil {
 		return nil, err
 	}
 
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		return []byte(config.Security.SecretKey), nil
-	}, jwt.WithValidMethods([]string{"HS256"}))
+	},
+		jwt.WithValidMethods([]string{"HS256"}),
+		jwt.WithExpirationRequired(),
+		jwt.WithIssuer(config.Security.TokenIssuer),
+		jwt.WithAudience(config.Security.TokenAudience),
+	)
 
 	if err != nil {
 		return nil, err

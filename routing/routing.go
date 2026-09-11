@@ -113,7 +113,7 @@ func Initialize(options ...Option) {
 		}
 	}
 
-	validateSecretKeyAtBoot(mainConfig.Security.SecretKey, mainConfig.Mode)
+	validateJWTConfigAtBoot(mainConfig)
 
 	// Before gin.Default(): Gin logs its mode as it builds the engine, so
 	// setting it afterwards would leave a log line contradicting reality.
@@ -313,28 +313,33 @@ func applyGinMode(mode string) {
 	}
 }
 
-// validateSecretKeyAtBoot surfaces a misconfigured JWT secret at startup
+// validateJWTConfigAtBoot surfaces a misconfigured JWT policy at startup
 // instead of letting every token operation fail at request time (AUTHZ-012).
 // Outside production the problem is only logged: a development or test
 // application must keep booting with a throwaway secret, and many do not use
-// the token service at all. In production a short secret is fatal — it is the
-// one place where booting with a guessable signing key is worse than not
-// booting. The length rule is kept in sync with services.ValidateSecretKey
-// (routing cannot import services — import cycle).
-func validateSecretKeyAtBoot(secret, mode string) {
+// the token service at all. In production an invalid policy is fatal. These
+// rules are kept in sync with services.ValidateTokenConfig (routing cannot
+// import services — import cycle).
+func validateJWTConfigAtBoot(config *providers.MainConfig) {
 	const minSecretKeyLength = 32
 
 	problem := ""
 	switch {
-	case secret == "":
+	case config.Security.SecretKey == "":
 		problem = "security.secret_key is empty"
-	case len(secret) < minSecretKeyLength:
-		problem = fmt.Sprintf("security.secret_key is too short (%d bytes, minimum %d)", len(secret), minSecretKeyLength)
+	case len(config.Security.SecretKey) < minSecretKeyLength:
+		problem = fmt.Sprintf("security.secret_key is too short (%d bytes, minimum %d)", len(config.Security.SecretKey), minSecretKeyLength)
+	case strings.TrimSpace(config.Security.TokenIssuer) == "":
+		problem = "security.token_issuer is empty"
+	case strings.TrimSpace(config.Security.TokenAudience) == "":
+		problem = "security.token_audience is empty"
+	case config.Security.TokenExpires <= 0:
+		problem = "security.token_expires must be greater than zero"
 	default:
 		return
 	}
 
-	if strings.EqualFold(mode, productionMode) {
+	if strings.EqualFold(config.Mode, productionMode) {
 		log.Fatalf("%s: refusing to start in production mode", problem)
 	}
 	log.Printf("warning: %s; JWT features stay unusable until it is fixed, and production mode would refuse to start", problem)

@@ -20,6 +20,9 @@ func TestConfigReader(t *testing.T) {
 	if cfg.Security.SecretKey != "secret_key_at_least_32_bytes_long!!" {
 		t.Errorf("Security config not found")
 	}
+	if cfg.Security.TokenIssuer != "https://auth.test.example" || cfg.Security.TokenAudience != "yogourt-test-api" {
+		t.Errorf("JWT issuer or audience config not found")
+	}
 	if len(cfg.EnvFiles) != 1 || cfg.EnvFiles[0] != "./configs/yogourt.env" {
 		t.Errorf("Env files config not found")
 	}
