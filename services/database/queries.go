@@ -2,7 +2,9 @@ package database
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -72,6 +74,16 @@ func GetOneBy(obj any, values map[string]any) error {
 	return getOneBy(db, obj, values)
 }
 
+// GetOneByIdentity loads one record by an exact identity value. The value is
+// always bound as data and cannot select Like, Or, IN, or ordering behavior.
+func GetOneByIdentity(obj any, column string, value string) error {
+	db, err := providers.GetDB()
+	if err != nil {
+		return err
+	}
+	return getOneByIdentity(db, obj, column, value)
+}
+
 func getOneBy(db *gorm.DB, obj any, values map[string]any) error {
 	rv, err := structPointer(obj)
 	if err != nil {
@@ -87,6 +99,36 @@ func getOneBy(db *gorm.DB, obj any, values map[string]any) error {
 	}
 	rv.Elem().Set(probe.Elem())
 	return nil
+}
+
+func getOneByIdentity(db *gorm.DB, obj any, column string, value string) error {
+	rv, err := structPointer(obj)
+	if err != nil {
+		return err
+	}
+	probe := reflect.New(rv.Elem().Type())
+	query, err := buildIdentityQuery(db, probe.Interface(), column, value)
+	if err != nil {
+		return err
+	}
+	if err := query.First(probe.Interface()).Error; err != nil {
+		return err
+	}
+	rv.Elem().Set(probe.Elem())
+	return nil
+}
+
+func buildIdentityQuery(db *gorm.DB, model any, column string, value string) (*gorm.DB, error) {
+	query := db.Model(model)
+	if err := query.Statement.Parse(query.Statement.Model); err != nil {
+		return nil, err
+	}
+	field := query.Statement.Schema.LookUpField(column)
+	if field == nil || field.DBName == "" {
+		return nil, fmt.Errorf("unknown identity column %q on %s", column, query.Statement.Schema.Name)
+	}
+	identity := clause.Column{Table: query.Statement.Table, Name: field.DBName}
+	return query.Where(clause.Eq{Column: identity, Value: value}).Preload(clause.Associations), nil
 }
 
 func (dw DataWriter) Create(obj any) error {
@@ -150,7 +192,7 @@ func (dw DataWriter) Upsert(obj any, values map[string]any) error {
 		return err
 	}
 	probe := reflect.New(rv.Elem().Type()).Interface()
-	switch err := getOneBy(db, probe, values); {
+	switch err := getOneByExact(db, probe, values); {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		return dw.Create(obj)
 	case err != nil:
@@ -160,6 +202,54 @@ func (dw DataWriter) Upsert(obj any, values map[string]any) error {
 		return err
 	}
 	return dw.Update(obj)
+}
+
+// getOneByExact is used by Upsert: its match key consists only of exact,
+// scalar columns on the model itself. Search operators and relations do not
+// define record identity.
+func getOneByExact(db *gorm.DB, obj any, values map[string]any) error {
+	rv, err := structPointer(obj)
+	if err != nil {
+		return err
+	}
+	probe := reflect.New(rv.Elem().Type())
+	if len(values) == 0 {
+		return errors.New("upsert requires at least one exact match column")
+	}
+	query := db.Model(probe.Interface())
+	if err := query.Statement.Parse(query.Statement.Model); err != nil {
+		return err
+	}
+	for column, value := range values {
+		if column == orderByPattern || strings.Contains(column, ".") {
+			return fmt.Errorf("upsert match column %q must be a model column", column)
+		}
+		if _, ok := value.(LikeOperator); ok {
+			return fmt.Errorf("upsert match column %q requires an exact value", column)
+		}
+		if _, ok := value.(OrOperator); ok {
+			return fmt.Errorf("upsert match column %q requires an exact value", column)
+		}
+		if _, ok := value.(clause.Expression); ok {
+			return fmt.Errorf("upsert match column %q requires a literal value", column)
+		}
+		if isSliceOrArray(value) {
+			return fmt.Errorf("upsert match column %q requires a scalar value", column)
+		}
+		field := query.Statement.Schema.LookUpField(column)
+		if field == nil || field.DBName == "" {
+			return fmt.Errorf("unknown upsert match column %q on %s", column, query.Statement.Schema.Name)
+		}
+		query = query.Where(clause.Eq{
+			Column: clause.Column{Table: query.Statement.Table, Name: field.DBName},
+			Value:  value,
+		})
+	}
+	if err := query.Preload(clause.Associations).First(probe.Interface()).Error; err != nil {
+		return err
+	}
+	rv.Elem().Set(probe.Elem())
+	return nil
 }
 
 func (dw DataWriter) Delete(obj any) error {

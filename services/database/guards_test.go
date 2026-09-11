@@ -108,9 +108,9 @@ func TestBuildQueryJoinsManyToManyFromMetadata(t *testing.T) {
 	sql := query.Session(&gorm.Session{DryRun: true}).Find(&results).Statement.SQL.String()
 
 	for _, fragment := range []string{
-		"LEFT JOIN joined_post_tags ON joined_post_tags.joined_post_id = joined_posts.id",
-		`LEFT JOIN joined_tags "Tags" ON "Tags".id = joined_post_tags.joined_tag_id`,
-		`"Tags".label`,
+		"LEFT JOIN `joined_post_tags` ON `joined_post_tags`.`joined_post_id` = `joined_posts`.`id`",
+		"LEFT JOIN `joined_tags` `Tags` ON `Tags`.`id` = `joined_post_tags`.`joined_tag_id`",
+		"`Tags`.`label`",
 	} {
 		if !strings.Contains(sql, fragment) {
 			t.Errorf("expected %q in the generated SQL, got:\n%s", fragment, sql)
@@ -133,8 +133,8 @@ func TestBuildQueryResolvesMultiWordRelationNames(t *testing.T) {
 	sql := query.Session(&gorm.Session{DryRun: true}).Find(&results).Statement.SQL.String()
 
 	for _, fragment := range []string{
-		`LEFT JOIN joined_tags "AccessGroups"`,
-		`"AccessGroups".label`,
+		"LEFT JOIN `joined_tags` `AccessGroups`",
+		"`AccessGroups`.`label`",
 	} {
 		if !strings.Contains(sql, fragment) {
 			t.Errorf("expected %q in the generated SQL, got:\n%s", fragment, sql)
