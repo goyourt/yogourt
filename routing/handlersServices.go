@@ -96,7 +96,7 @@ func hydrateCandidate(c *gin.Context, candidate any) bool {
 // defeating the 404 masking of D8. Only a technical database failure aborts
 // the request.
 func hydrateRelation(c *gin.Context, obj interfaces.Resource) bool {
-	if err := database.GetOneBy(obj, map[string]any{obj.PublicIdColumn(): obj.GetPublicId()}); err != nil {
+	if err := database.GetOneByIdentity(obj, obj.PublicIdColumn(), obj.GetPublicId()); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return true
 		}
