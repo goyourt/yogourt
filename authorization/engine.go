@@ -240,7 +240,7 @@ func (e *Engine) hasPermission(ctx context.Context, subject Subject, scope Scope
 // scopes separately also lets the ScopeGlobal answer be reused by checks made
 // on different scopes within the same request.
 func (e *Engine) resolveGrants(ctx context.Context, subject Subject, scope Scope) (Grants, error) {
-	grants, err := resolveScopeGrants(ctx, e.provider, subject, scope)
+	grants, err := resolveScopeGrants(ctx, e, subject, scope)
 	if err != nil {
 		return Grants{}, err
 	}
@@ -248,7 +248,7 @@ func (e *Engine) resolveGrants(ctx context.Context, subject Subject, scope Scope
 		return grants, nil
 	}
 
-	global, err := resolveScopeGrants(ctx, e.provider, subject, ScopeGlobal)
+	global, err := resolveScopeGrants(ctx, e, subject, ScopeGlobal)
 	if err != nil {
 		return Grants{}, err
 	}

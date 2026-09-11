@@ -71,6 +71,8 @@ paths:
   route_folder: "./api/"
 security:
   secret_key: "dev"
+  token_issuer: "https://auth.example.com"
+  token_audience: "demo-api"
   hash_cost: 12
   token_expires: 1440
   password_minimum_length: 8

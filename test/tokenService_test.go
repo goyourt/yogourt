@@ -22,8 +22,19 @@ func TestTokenProvider(t *testing.T) {
 	if token == "" {
 		t.Error("Token is empty")
 	}
-	if _, err = services.ValidToken(token); err != nil {
+	parsed, err := services.ValidToken(token)
+	if err != nil {
 		t.Errorf("Token is not valid: %v", err)
+	}
+	config := providers.GetMainConfig()
+	for claim, want := range map[string]string{
+		"iss": config.Security.TokenIssuer,
+		"aud": config.Security.TokenAudience,
+	} {
+		got, claimErr := services.GetStringClaim(parsed, claim)
+		if claimErr != nil || got != want {
+			t.Errorf("claim %s = %q, %v; want %q", claim, got, claimErr, want)
+		}
 	}
 
 	req, _ := http.NewRequest(http.MethodGet, "/test", nil)
@@ -47,6 +58,8 @@ func TestValidTokenRejectsOtherAlgorithms(t *testing.T) {
 	forgedToken := jwt.NewWithClaims(jwt.SigningMethodHS384, jwt.MapClaims{
 		"uuid": "11111111-1111-1111-1111-111111111111",
 		"exp":  time.Now().Add(time.Hour).Unix(),
+		"iss":  config.Security.TokenIssuer,
+		"aud":  config.Security.TokenAudience,
 	})
 
 	signed, err := forgedToken.SignedString([]byte(config.Security.SecretKey))
@@ -70,6 +83,61 @@ func TestValidateSecretKey(t *testing.T) {
 
 	if err := services.ValidateSecretKey("this-secret-key-is-at-least-32-bytes-long"); err != nil {
 		t.Errorf("expected a 32+ byte secret key to be accepted, got: %v", err)
+	}
+}
+
+func TestValidateTokenConfig(t *testing.T) {
+	valid := *providers.GetMainConfig()
+	if err := services.ValidateTokenConfig(&valid); err != nil {
+		t.Fatalf("expected test JWT config to be valid, got: %v", err)
+	}
+
+	tests := map[string]func(*providers.MainConfig){
+		"missing issuer":   func(config *providers.MainConfig) { config.Security.TokenIssuer = "" },
+		"missing audience": func(config *providers.MainConfig) { config.Security.TokenAudience = "" },
+		"zero expiration":  func(config *providers.MainConfig) { config.Security.TokenExpires = 0 },
+	}
+	for name, invalidate := range tests {
+		t.Run(name, func(t *testing.T) {
+			config := valid
+			invalidate(&config)
+			if err := services.ValidateTokenConfig(&config); err == nil {
+				t.Fatal("expected invalid JWT config to be rejected")
+			}
+		})
+	}
+}
+
+func TestValidTokenRequiresExpirationIssuerAndAudience(t *testing.T) {
+	config := providers.GetMainConfig()
+	base := jwt.MapClaims{
+		"sub": "subject-1",
+		"exp": time.Now().Add(time.Hour).Unix(),
+		"iss": config.Security.TokenIssuer,
+		"aud": config.Security.TokenAudience,
+	}
+
+	tests := map[string]func(jwt.MapClaims){
+		"missing expiration": func(claims jwt.MapClaims) { delete(claims, "exp") },
+		"wrong issuer":       func(claims jwt.MapClaims) { claims["iss"] = "https://other.example" },
+		"wrong audience":     func(claims jwt.MapClaims) { claims["aud"] = "other-api" },
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			claims := make(jwt.MapClaims, len(base))
+			for key, value := range base {
+				claims[key] = value
+			}
+			mutate(claims)
+			token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+			signed, err := token.SignedString([]byte(config.Security.SecretKey))
+			if err != nil {
+				t.Fatalf("sign token: %v", err)
+			}
+			if _, err := services.ValidToken(signed); err == nil {
+				t.Fatal("expected token with invalid registered claims to be rejected")
+			}
+		})
 	}
 }
 
@@ -101,6 +169,8 @@ func TestGetStringClaimRejectsNonString(t *testing.T) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sub": 42,
 		"exp": time.Now().Add(time.Hour).Unix(),
+		"iss": config.Security.TokenIssuer,
+		"aud": config.Security.TokenAudience,
 	})
 	signed, err := token.SignedString([]byte(config.Security.SecretKey))
 	if err != nil {
