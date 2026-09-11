@@ -3,6 +3,7 @@ package database
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/goyourt/yogourt/interfaces"
 	"gorm.io/gorm"
@@ -113,6 +114,125 @@ func TestCreateResetsGeneratedIdentity(t *testing.T) {
 	db.Raw(`SELECT COUNT(*) FROM audit_records WHERE uuid = ?`, chosenUuid).Scan(&count)
 	if count != 0 {
 		t.Error("a client-chosen uuid must never be inserted as a generated identity")
+	}
+}
+
+// Create must not let a populated association make GORM create a second,
+// unrelated row. Relations are persisted only through UpsertRelations.
+func TestCreateDoesNotWriteAssociations(t *testing.T) {
+	db := setupRelationTables(t)
+
+	owner := &ownerRecord{
+		Name:     "alice",
+		Security: &securityRecord{Level: "admin"},
+	}
+	writer := DataWriter{db: db}
+	if err := writer.Create(owner); err != nil {
+		t.Fatalf("create owner: %v", err)
+	}
+
+	var count int64
+	if err := db.Raw(`SELECT COUNT(*) FROM security_records`).Scan(&count).Error; err != nil {
+		t.Fatalf("count security records: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("Create must never write associations implicitly, found %d security rows", count)
+	}
+}
+
+// Writer-level audit hooks belong to persistence, rather than the HTTP
+// handler: a direct DataWriter call must store the authenticated actor on both
+// creation and update, and advance updated_at on the latter.
+func TestCreateAndUpdatePersistAuditStamps(t *testing.T) {
+	db := setupAuditTable(t)
+	actor := createAuditRecord(t, db, "actor")
+
+	record := &auditRecord{Name: "before"}
+	writer := DataWriter{db: db, CurrentUser: actor}
+	if err := writer.Create(record); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if record.ID == nil {
+		t.Fatal("created record has no primary key")
+	}
+	if record.CreatedById == nil || *record.CreatedById != *actor.ID {
+		t.Fatalf("create must stamp created_by_id with actor %d, got %v", *actor.ID, record.CreatedById)
+	}
+	if record.UpdatedById == nil || *record.UpdatedById != *actor.ID {
+		t.Fatalf("create must stamp updated_by_id with actor %d, got %v", *actor.ID, record.UpdatedById)
+	}
+
+	createdUpdatedAt := record.UpdatedAt
+	time.Sleep(time.Millisecond)
+	record.Name = "after"
+	if err := writer.Update(record); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	var stored auditRecord
+	if err := db.First(&stored, "id = ?", *record.ID).Error; err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if stored.CreatedById == nil || *stored.CreatedById != *actor.ID {
+		t.Errorf("stored created_by_id = %v, want actor %d", stored.CreatedById, *actor.ID)
+	}
+	if stored.UpdatedById == nil || *stored.UpdatedById != *actor.ID {
+		t.Errorf("stored updated_by_id = %v, want actor %d", stored.UpdatedById, *actor.ID)
+	}
+	if !stored.UpdatedAt.After(createdUpdatedAt) {
+		t.Errorf("updated_at = %v, want after creation time %v", stored.UpdatedAt, createdUpdatedAt)
+	}
+}
+
+type uuidPrimaryRecord struct {
+	interfaces.WithUuidPK
+	Name string
+}
+
+func (uuidPrimaryRecord) TableName() string { return "uuid_primary_records" }
+
+func setupUUIDPrimaryTable(t *testing.T) *gorm.DB {
+	t.Helper()
+	db := openDB(t)
+	if err := db.AutoMigrate(&uuidPrimaryRecord{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if err := db.Exec(`TRUNCATE uuid_primary_records`).Error; err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+	return db
+}
+
+// WithUuidPK has no integer fallback. PostgreSQL must generate its primary
+// key after Create clears an incoming client value, and that generated key
+// must remain usable by Update.
+func TestWithUuidPKCreateResetsIncomingPrimaryKey(t *testing.T) {
+	db := setupUUIDPrimaryTable(t)
+	chosen := "11111111-1111-1111-1111-111111111111"
+	record := &uuidPrimaryRecord{Name: "before"}
+	record.Uuid = &chosen
+
+	writer := DataWriter{db: db}
+	if err := writer.Create(record); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if record.Uuid == nil || *record.Uuid == "" {
+		t.Fatal("PostgreSQL-generated UUID primary key was not returned")
+	}
+	if *record.Uuid == chosen {
+		t.Error("Create must clear a client-chosen UUID primary key")
+	}
+
+	record.Name = "after"
+	if err := writer.Update(record); err != nil {
+		t.Fatalf("update UUID primary-key record: %v", err)
+	}
+	var stored uuidPrimaryRecord
+	if err := db.First(&stored, "uuid = ?", *record.Uuid).Error; err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if stored.Name != "after" {
+		t.Errorf("stored name = %q, want after", stored.Name)
 	}
 }
 
