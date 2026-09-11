@@ -15,6 +15,15 @@ import (
 
 const mainConfigPath = "./configs/yogourt.yaml"
 
+const (
+	// DefaultMaxRequestBodyBytes is large enough for ordinary JSON and file
+	// uploads while still bounding multipart parsing when the key is absent.
+	DefaultMaxRequestBodyBytes int64 = 32 << 20
+	// MaxRequestBodyBytes prevents a configuration mistake from effectively
+	// removing the backend limit. Larger transfers need a dedicated path.
+	MaxRequestBodyBytes int64 = 1 << 30
+)
+
 var (
 	configOnce sync.Once
 	configData *MainConfig
@@ -29,35 +38,11 @@ type MainConfig struct {
 	Mode     string   `yaml:"mode"`
 	EnvFiles EnvFiles `yaml:"env_files"`
 
-	Server struct {
-		Port int    `yaml:"port"`
-		Host string `yaml:"host"`
-		// CORS switches the CORS middleware and the preflight catch-all on
-		// or off. A pointer, because the absent key and an explicit false
-		// must not mean the same thing: an application that never wrote the
-		// key keeps the middleware it has always had, and only "cors: false"
-		// removes it.
-		CORS *bool `yaml:"cors"`
-		// BasePath is the HTTP prefix every route is published under. Empty
-		// falls back to routing.DefaultPrefix ("/api").
-		BasePath string `yaml:"base_path"`
-		// BaseURL is the public URL the application is reachable at, used by
-		// services.GetBaseUrl. Host is a listening address — "0.0.0.0" tells
-		// the socket to accept every interface and says nothing about how a
-		// client reaches the application — so a deployment behind a reverse
-		// proxy, a TLS terminator or a container port mapping declares its
-		// public URL here. Empty rebuilds it from Host and Port.
-		BaseURL string `yaml:"base_url"`
-	} `yaml:"server"`
+	Server ServerConfig `yaml:"server"`
 
 	Database DatabaseConfig `yaml:"database"`
 
-	Cache struct {
-		Host     string `yaml:"host"`
-		Port     string `yaml:"port"`
-		Password string `yaml:"password"`
-		DB       int    `yaml:"db"`
-	} `yaml:"cache"`
+	Cache CacheConfig `yaml:"cache"`
 
 	// Paths carries the one path the runtime needs: RouteFolder, the folder
 	// of the route tree. model_folder, project_name and main_file used to be
@@ -91,6 +76,71 @@ type MainConfig struct {
 	} `yaml:"cors"`
 }
 
+// ServerConfig controls the HTTP listener and the request budgets enforced by
+// the framework. Zero values select bounded defaults; they never disable a
+// timeout or a size limit.
+type ServerConfig struct {
+	Port int    `yaml:"port"`
+	Host string `yaml:"host"`
+	// CORS switches the CORS middleware and the preflight catch-all on
+	// or off. A pointer, because the absent key and an explicit false
+	// must not mean the same thing: an application that never wrote the
+	// key keeps the middleware it has always had, and only "cors: false"
+	// removes it.
+	CORS *bool `yaml:"cors"`
+	// BasePath is the HTTP prefix every route is published under. Empty
+	// falls back to routing.DefaultPrefix ("/api").
+	BasePath string `yaml:"base_path"`
+	// BaseURL is the public URL the application is reachable at, used by
+	// services.GetBaseUrl. Host is a listening address — "0.0.0.0" tells
+	// the socket to accept every interface and says nothing about how a
+	// client reaches the application — so a deployment behind a reverse
+	// proxy, a TLS terminator or a container port mapping declares its
+	// public URL here. Empty rebuilds it from Host and Port.
+	BaseURL           string   `yaml:"base_url"`
+	TrustedProxies    []string `yaml:"trusted_proxies"`
+	ReadHeaderTimeout Duration `yaml:"read_header_timeout"`
+	ReadTimeout       Duration `yaml:"read_timeout"`
+	WriteTimeout      Duration `yaml:"write_timeout"`
+	IdleTimeout       Duration `yaml:"idle_timeout"`
+	MaxHeaderBytes    int      `yaml:"max_header_bytes"`
+	MaxBodyBytes      int64    `yaml:"max_body_bytes"`
+}
+
+// CacheConfig controls the Redis connection. TLS uses Go's normal certificate
+// and hostname verification and can add an application CA or a client
+// certificate; no insecure verification switch is exposed.
+type CacheConfig struct {
+	Host     string         `yaml:"host"`
+	Port     string         `yaml:"port"`
+	Password string         `yaml:"password"`
+	DB       int            `yaml:"db"`
+	TLS      CacheTLSConfig `yaml:"tls"`
+}
+
+type CacheTLSConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	ServerName string `yaml:"server_name"`
+	CAFile     string `yaml:"ca_file"`
+	CertFile   string `yaml:"cert_file"`
+	KeyFile    string `yaml:"key_file"`
+}
+
+// RequestBodyLimit resolves server.max_body_bytes. Zero selects the bounded
+// default; negative values and values above the framework ceiling are invalid.
+func (c ServerConfig) RequestBodyLimit() (int64, error) {
+	switch {
+	case c.MaxBodyBytes == 0:
+		return DefaultMaxRequestBodyBytes, nil
+	case c.MaxBodyBytes < 0:
+		return 0, fmt.Errorf("server.max_body_bytes must be positive")
+	case c.MaxBodyBytes > MaxRequestBodyBytes:
+		return 0, fmt.Errorf("server.max_body_bytes must not exceed %d", MaxRequestBodyBytes)
+	default:
+		return c.MaxBodyBytes, nil
+	}
+}
+
 // DatabaseConfig is the database section of the configuration. It is a named
 // type, not an anonymous struct like its neighbours, so the DSN and pool
 // helpers of the provider can take it as a parameter and be tested without
@@ -102,10 +152,9 @@ type DatabaseConfig struct {
 	Host     string `yaml:"host"`
 	Port     int    `yaml:"port"`
 	DB       string `yaml:"db"`
-	// SSLMode is the libpq sslmode of the connection. The DSN used to
-	// hard-code "disable", which is what an empty value still means:
-	// turning TLS on for every existing application would break the ones
-	// talking to a server that does not offer it.
+	// SSLMode is the libpq sslmode of the connection. Network connections
+	// default to "verify-full" and cannot select a weaker mode. A local Unix
+	// socket may use "disable" only with AllowInsecureLocalSocket.
 	SSLMode string `yaml:"ssl_mode"`
 	// SSLRootCert, SSLCert and SSLKey are the paths libpq needs beyond
 	// sslmode: the CA bundle "verify-ca" and "verify-full" check the server
@@ -115,6 +164,10 @@ type DatabaseConfig struct {
 	SSLRootCert string `yaml:"ssl_root_cert"`
 	SSLCert     string `yaml:"ssl_cert"`
 	SSLKey      string `yaml:"ssl_key"`
+	// AllowInsecureLocalSocket is the explicit clear-text exception for a
+	// explicitly configured local Unix-domain socket. TCP connections and an
+	// absent host require verify-full.
+	AllowInsecureLocalSocket bool `yaml:"allow_insecure_local_socket"`
 	// SearchPath is the schema search path of every session opened by the
 	// pool. Empty leaves the server default ("$user", public), so a
 	// deployment holding its tables in a named schema no longer has to
