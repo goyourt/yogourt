@@ -11,46 +11,61 @@ import (
 	"gorm.io/gorm"
 )
 
+// HandleRequest binds the JSON body into req, then hydrates every field
+// implementing interfaces.Resource whose public id is set. Other fields are
+// bound as-is.
 func HandleRequest(c *gin.Context, req any) bool {
 	if err := c.ShouldBindJSON(req); err != nil {
 		RespondAndAbort(c, 422, "Invalid request: argument mismatch")
 		return false
 	}
 
-	// Hydrate relations in req if they got an uuid
 	rv := reflect.ValueOf(req)
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
 		return true
 	}
 	rv = rv.Elem()
+	if rv.Kind() != reflect.Struct {
+		return true
+	}
 
 	for i := 0; i < rv.NumField(); i++ {
-		f := rv.Field(i)
-		if !f.CanInterface() {
+		field := rv.Field(i)
+		if !field.CanInterface() {
 			continue
 		}
 
-		// simple case : BaseInterface
-		if (f.Kind() == reflect.Interface || f.Kind() == reflect.Ptr) && !f.IsNil() {
-			if obj, valid := f.Interface().(interfaces.BaseInterface); valid && obj != nil {
-				if obj.GetUuid() != "" && !hydrateRelation(c, obj) {
-					return false
-				}
+		switch field.Kind() {
+		case reflect.Interface, reflect.Ptr:
+			if field.IsNil() {
+				continue
 			}
-		}
-
-		// slice case : []interfaces.BaseInterface
-		if f.Kind() == reflect.Slice {
-			for j := 0; j < f.Len(); j++ {
-				elem := f.Index(j)
-				if elem.Kind() != reflect.Interface {
-					continue
-				}
-				if !elem.CanInterface() || elem.IsNil() {
-					continue
-				}
-				if obj, valid := elem.Interface().(interfaces.BaseInterface); valid && obj != nil {
-					if obj.GetUuid() != "" && !hydrateRelation(c, obj) {
+			if !hydrateCandidate(c, field.Interface()) {
+				return false
+			}
+		case reflect.Struct:
+			if !field.CanAddr() || !field.Addr().CanInterface() {
+				continue
+			}
+			if !hydrateCandidate(c, field.Addr().Interface()) {
+				return false
+			}
+		case reflect.Slice:
+			for j := 0; j < field.Len(); j++ {
+				elem := field.Index(j)
+				switch elem.Kind() {
+				case reflect.Interface, reflect.Ptr:
+					if elem.IsNil() || !elem.CanInterface() {
+						continue
+					}
+					if !hydrateCandidate(c, elem.Interface()) {
+						return false
+					}
+				case reflect.Struct:
+					if !elem.CanAddr() || !elem.Addr().CanInterface() {
+						continue
+					}
+					if !hydrateCandidate(c, elem.Addr().Interface()) {
 						return false
 					}
 				}
@@ -61,13 +76,27 @@ func HandleRequest(c *gin.Context, req any) bool {
 	return true
 }
 
-// hydrateRelation loads obj by its uuid. An unknown uuid leaves the object
-// unhydrated and lets the handler run, exactly as before v2 (D1) — a 422 here
-// would also give anonymous callers an existence oracle on any referenced
-// table, defeating the 404 masking of D8. Only a technical database failure
-// aborts the request.
-func hydrateRelation(c *gin.Context, obj interfaces.BaseInterface) bool {
-	if err := database.GetOneBy(obj, map[string]any{"uuid": obj.GetUuid()}); err != nil {
+func hydrateCandidate(c *gin.Context, candidate any) bool {
+	// An interface field can hide a typed-nil pointer: it passes the type
+	// assertion and panics on the first method call.
+	rv := reflect.ValueOf(candidate)
+	if rv.Kind() == reflect.Ptr && rv.IsNil() {
+		return true
+	}
+	obj, ok := candidate.(interfaces.Resource)
+	if !ok || obj.GetPublicId() == "" {
+		return true
+	}
+	return hydrateRelation(c, obj)
+}
+
+// hydrateRelation loads obj by its public id. An unknown id leaves the object
+// unhydrated, identifier included, and lets the handler run — a 422 here
+// would give anonymous callers an existence oracle on any referenced table,
+// defeating the 404 masking of D8. Only a technical database failure aborts
+// the request.
+func hydrateRelation(c *gin.Context, obj interfaces.Resource) bool {
+	if err := database.GetOneBy(obj, map[string]any{obj.PublicIdColumn(): obj.GetPublicId()}); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return true
 		}

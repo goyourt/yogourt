@@ -207,7 +207,7 @@ Passez un pointeur vers une structure. Une erreur de binding renvoie HTTP 422 :
 {"error":"Invalid request: argument mismatch"}
 ~~~
 
-Le helper tente aussi d’hydrater certaines relations qui implémentent <code>interfaces.BaseInterface</code> et possèdent un UUID. Une panne de base pendant cette hydratation interrompt désormais la requête avec un <code>503</code> générique. Un UUID inconnu, en revanche, laisse volontairement l’objet non hydraté et laisse tourner le handler : répondre autrement donnerait à un appelant anonyme un oracle d’existence sur la table référencée.
+Le helper tente aussi d’hydrater les champs qui implémentent <code>interfaces.Resource</code> et portent un identifiant public — champs directs, slices de structs et slices de pointeurs. Une panne de base pendant cette hydratation interrompt la requête avec un <code>503</code> générique. Un identifiant inconnu, en revanche, laisse volontairement l’objet non hydraté, identifiant compris, et laisse tourner le handler : répondre autrement donnerait à un appelant anonyme un oracle d’existence sur la table référencée.
 
 ## Réponses
 

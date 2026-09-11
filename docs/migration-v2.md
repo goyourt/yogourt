@@ -104,7 +104,7 @@ processus, il est retourné. Les signatures suivantes changent :
 | <code>providers.GetDB() *gorm.DB</code> | <code>providers.GetDB() (*gorm.DB, error)</code> |
 | <code>providers.InitDB() *gorm.DB</code> | <code>providers.InitDB() (*gorm.DB, error)</code> |
 | <code>database.SearchQuery(...) *gorm.DB</code> | <code>database.SearchQuery(...) (*gorm.DB, error)</code> |
-| <code>database.JoinTables(...) *gorm.DB</code> | <code>database.JoinTables(...) (*gorm.DB, error)</code> |
+| <code>database.JoinTables(...)</code> | supprimé — <code>database.SearchQuery(...) (*gorm.DB, error)</code> puis l’API GORM |
 
 ~~~go
 db := providers.GetDB()                    // v1 : log.Fatalf, le processus sort
@@ -345,17 +345,32 @@ Tous les fichiers <code>.go</code> scannés, sauf <code>_test.go</code>, doivent
 
 Le CLI stable v0.5 ne fournit pas les commandes v2 <code>build</code>, <code>dev</code> ou <code>start</code> et son <code>init</code> génère encore une structure v1. Utilisez la compilation manuelle tant qu’une nouvelle version n’est pas publiée.
 
-## 8. Adapter les implémentations de fichiers
+## 8. Migrer les modèles vers le nouveau contrat
 
-Les implémentations personnalisées de <code>interfaces.FileInterface</code> doivent désormais fournir :
+<code>interfaces.BaseInterface</code> et ses 16 méthodes n’existent plus. Le CRUD n’exige plus aucune interface ; la seule interface du framework est <code>interfaces.Resource</code> (<code>GetPublicId</code>, <code>PublicIdColumn</code>), requise pour l’hydratation de <code>HandleRequest</code>, <code>Authenticate</code>, <code>UpsertRelations</code> et le sujet d’autorisation. L’audit, le reset d’identité générée et le soft delete audité sont des capacités optionnelles détectées par assertion de type (<code>GeneratedIdentityResetter</code>, <code>CreatedBySetter</code>, <code>UpdatedBySetter</code>, <code>UpdatedAtSetter</code>, <code>DeleteAuditor</code>, <code>AuditActorProvider</code>).
+
+- Les modèles qui embarquent <code>interfaces.Base</code> ne changent pas : <code>Base</code> est recomposée en briques (<code>WithID</code>, <code>WithUuid</code>, <code>WithTimestamps</code>, <code>WithAudit</code>, <code>WithSoftDelete</code>) et porte les mêmes capacités qu’avant.
+- Le code qui appelait les getters/setters supprimés (<code>GetID</code>, <code>GetUuid</code>, <code>SetCreatedById</code>…) accède aux champs des briques directement (<code>*user.ID</code>, <code>user.Uuid</code>) ou passe par <code>GetPublicId()</code>.
+- <code>HydrateRelation</code> perd son paramètre <code>relationId</code> ; <code>SearchQuery</code> prend la slice en premier argument ; <code>JoinTables</code> est supprimé (passez par <code>SearchQuery</code> puis l’API GORM) ; <code>database.Like</code>/<code>Or</code> côté filtres sont inchangés.
+- <code>Create</code> et <code>Update</code> n’écrivent plus jamais les associations implicitement (<code>Omit(clause.Associations)</code>) : les relations imbriquées passent par <code>UpsertRelations</code>. <code>Update</code> ne modifie que les champs non nuls (patch) — il ne peut pas vider une colonne.
+- <code>GetCurrentUser</code> retourne <code>any</code> : faites l’assertion vers votre modèle utilisateur.
+
+Le schéma de <code>Base</code> est assaini : la contrainte PK reprend son nom par défaut et <code>deleted_at</code> est indexé. Appliquez <code>migrations/v1_to_v2.sql</code> sur chaque base existante — deux changements d’index, aucune donnée déplacée.
+
+## 8 bis. Adapter les implémentations de fichiers
+
+<code>interfaces.FileInterface</code> ne contient plus que les méthodes fichier (elle n’embarque plus <code>BaseInterface</code>, et n’impose pas <code>Resource</code>) :
 
 ~~~go
-GetType() string
-SetType(string)
+GetName() string / SetName(string)
+GetPath() string / SetPath(string)
+GetExtension() string / SetExtension(string)
+GetContent() string / SetContent(string)
+GetType() string / SetType(string)
 GetFilePath(folder string) string
 ~~~
 
-Le type intégré <code>interfaces.File</code> contient aussi un champ <code>Type</code>.
+Le type intégré <code>interfaces.File</code> embarque <code>Base</code> et reste donc une <code>Resource</code> complète.
 
 Ne migrez pas le stockage sans prendre en compte les limites actuelles : contenu chargé en mémoire, erreurs d’écriture masquées et extension concaténée sans point au UUID. Voir le [guide des services](services.md#fichiers).
 
@@ -369,7 +384,7 @@ La v2 ajoute notamment :
 - la clé de filtre <code>orderBy</code> ;
 - <code>UpsertRelations</code>.
 
-Les lectures retournent désormais l’erreur GORM : <code>GetOneBy</code> (y compris <code>gorm.ErrRecordNotFound</code>), <code>GetAll</code>, <code>GetAllPaginated</code>, <code>HydrateRelation</code> et <code>HydrateManyToManyRelation</code>. L’ajout d’une valeur de retour ne casse pas les sites d’appel existants, mais vérifiez ces erreurs sur vos chemins critiques.
+Les lectures retournent l’erreur GORM : <code>GetOneBy</code> (y compris <code>gorm.ErrRecordNotFound</code>), <code>GetAll</code>, <code>GetAllPaginated</code>, <code>HydrateRelation</code> et <code>HydrateManyToManyRelation</code>. <code>GetOneBy</code> ne mute plus l’objet de l’appelant sur un échec. <code>Update</code> et <code>Delete</code> exigent la PK complète et refusent une ligne absente ; <code>UpsertRelations</code> refuse un identifiant public inconnu au lieu de créer.
 
 Pendant la migration :
 
@@ -380,7 +395,7 @@ Pendant la migration :
 
 ## 10. Réviser JWT et fichiers
 
-La v2 crée toujours des JWT HS256 avec <code>uuid</code> et <code>exp</code>. La validation restreint désormais explicitement l’algorithme à <code>HS256</code>, valide le format du claim <code>uuid</code> et exige un secret de 32 octets minimum, contrôlé dès le démarrage (warning hors production, refus de démarrer en mode <code>production</code>). Elle ne vérifie toujours ni issuer ni audience, et n’exige pas explicitement la présence de <code>exp</code> sur un token qu’elle n’a pas émis.
+La v2 crée des JWT HS256 avec <code>sub</code> et <code>exp</code>. Le claim <code>sub</code> porte l’identifiant public du modèle : une chaîne opaque, non vide, jamais validée en format — un identifiant non-UUID passe toute la chaîne. **Les tokens v1 (claim <code>uuid</code>) sont invalides : tous les tokens émis avant la bascule doivent être réémis (re-login).** La validation restreint explicitement l’algorithme à <code>HS256</code> et exige un secret de 32 octets minimum, contrôlé dès le démarrage (warning hors production, refus de démarrer en mode <code>production</code>). Elle ne vérifie toujours ni issuer ni audience, et n’exige pas explicitement la présence de <code>exp</code> sur un token qu’elle n’a pas émis.
 
 Avant mise en production :
 
