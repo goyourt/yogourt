@@ -38,19 +38,19 @@ type grantCacheKey struct {
 // values are equivalent.
 type grantCache struct {
 	mu     sync.Mutex
-	grants map[grantCacheKey]Grants
+	grants map[*Engine]map[grantCacheKey]Grants
 }
 
 func newGrantCache() *grantCache {
-	return &grantCache{grants: make(map[grantCacheKey]Grants)}
+	return &grantCache{grants: make(map[*Engine]map[grantCacheKey]Grants)}
 }
 
 // load returns the memoized grants for the key, if any.
-func (c *grantCache) load(key grantCacheKey) (Grants, bool) {
+func (c *grantCache) load(engine *Engine, key grantCacheKey) (Grants, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	grants, ok := c.grants[key]
+	grants, ok := c.grants[engine][key]
 
 	return grants, ok
 }
@@ -61,11 +61,14 @@ func (c *grantCache) load(key grantCacheKey) (Grants, bool) {
 // A stored value is treated as immutable: the engine clones the grants before
 // exposing them to a restriction (see Grants.clone), which is what makes it
 // safe to hand the same backing arrays to every check of the request.
-func (c *grantCache) store(key grantCacheKey, grants Grants) {
+func (c *grantCache) store(engine *Engine, key grantCacheKey, grants Grants) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.grants[key] = grants
+	if c.grants[engine] == nil {
+		c.grants[engine] = make(map[grantCacheKey]Grants)
+	}
+	c.grants[engine][key] = grants
 }
 
 // WithGrantCache derives a context carrying a fresh, empty per-request grant
@@ -113,6 +116,8 @@ func grantCacheFromContext(ctx context.Context) (*grantCache, bool) {
 
 // resolveScopeGrants asks the provider for the grants bound to one exact
 // scope, going through the per-request cache when the context carries one.
+// The engine pointer is part of the cache identity, so two engines using the
+// same request context never reuse each other's provider answers.
 //
 // A provider error is NEVER memoized. Caching it would freeze a transient
 // outage — a lost connection, a timeout, a failover — for the whole request:
@@ -121,22 +126,22 @@ func grantCacheFromContext(ctx context.Context) (*grantCache, bool) {
 // already covers the failing check itself (ReasonProviderError); making that
 // failure sticky would turn one blip into a whole request refused, and would
 // also make a retry inside the request pointless.
-func resolveScopeGrants(ctx context.Context, provider GrantProvider, subject Subject, scope Scope) (Grants, error) {
+func resolveScopeGrants(ctx context.Context, engine *Engine, subject Subject, scope Scope) (Grants, error) {
 	cache, ok := grantCacheFromContext(ctx)
 	if !ok {
-		return provider.Resolve(ctx, subject, scope)
+		return engine.provider.Resolve(ctx, subject, scope)
 	}
 
 	key := grantCacheKey{subjectID: subject.ID, scope: scope}
-	if grants, hit := cache.load(key); hit {
+	if grants, hit := cache.load(engine, key); hit {
 		return grants, nil
 	}
 
-	grants, err := provider.Resolve(ctx, subject, scope)
+	grants, err := engine.provider.Resolve(ctx, subject, scope)
 	if err != nil {
 		return Grants{}, err
 	}
-	cache.store(key, grants)
+	cache.store(engine, key, grants)
 
 	return grants, nil
 }

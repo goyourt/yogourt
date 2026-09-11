@@ -212,6 +212,31 @@ func TestGrantCacheDoesNotLeakBetweenScopes(t *testing.T) {
 	}
 }
 
+// TestGrantCacheDoesNotLeakBetweenEngines covers YSEC-06: applications may
+// compose several authorization engines on one request, and each engine must
+// resolve grants from its own provider.
+func TestGrantCacheDoesNotLeakBetweenEngines(t *testing.T) {
+	grantingProvider := newCountingProvider().grant("subject-1", ScopeGlobal, cachedAction)
+	denyingProvider := newCountingProvider()
+	grantingEngine := NewEngine(WithProvider(grantingProvider))
+	denyingEngine := NewEngine(WithProvider(denyingProvider))
+	ctx := WithGrantCache(context.Background())
+
+	if decision := decideRead(t, grantingEngine, ctx, "subject-1", ScopeGlobal); !decision.Allowed {
+		t.Fatalf("granting engine: decision = %+v, want allowed", decision)
+	}
+	decision := decideRead(t, denyingEngine, ctx, "subject-1", ScopeGlobal)
+	if decision.Allowed || decision.Reason != ReasonMissingPermission {
+		t.Fatalf("denying engine: decision = %+v, want missing permission", decision)
+	}
+	if got := grantingProvider.totalCalls(); got != 1 {
+		t.Errorf("granting provider calls = %d, want 1", got)
+	}
+	if got := denyingProvider.totalCalls(); got != 1 {
+		t.Errorf("denying provider calls = %d, want 1", got)
+	}
+}
+
 // TestGrantCacheNeverMemoizesErrors proves a transient provider outage is not
 // frozen for the whole request: the check that failed is denied, the next one
 // asks the provider again and succeeds.

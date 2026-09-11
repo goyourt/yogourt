@@ -47,12 +47,6 @@ func enforce(c *gin.Context, engine *authorization.Engine, action authorization.
 
 	ctx := attachGrantCache(c)
 	subject, _ := authorization.SubjectFromContext(ctx)
-	if subject.ID == "" {
-		AbortDenied(c, engine, action, authorization.ReasonUnauthenticated)
-
-		return
-	}
-
 	allowed, err := engine.HasPermission(ctx, subject, authorization.ScopeFromContext(ctx), action)
 	if err != nil {
 		reason := authorization.ReasonProviderError
@@ -60,6 +54,11 @@ func enforce(c *gin.Context, engine *authorization.Engine, action authorization.
 			reason = authorization.ReasonMisconfigured
 		}
 		AbortDenied(c, engine, action, reason)
+
+		return
+	}
+	if subject.ID == "" {
+		AbortDenied(c, engine, action, authorization.ReasonUnauthenticated)
 
 		return
 	}
