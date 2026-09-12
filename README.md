@@ -3,7 +3,7 @@
 Yogourt est un framework Go pour construire des API avec Gin, un routage basé sur le système de fichiers, GORM, PostgreSQL, Redis et des services d’authentification et de fichiers.
 
 > [!WARNING]
-> La v2 est en préversion sur la branche <code>release/v2.0.0</code>. Le module porte encore le chemin <code>github.com/goyourt/yogourt</code>, aucun tag v2 n’est publié et le CLI stable v0.5 n’est pas compatible avec cette organisation. Pour tester cette version dans une autre application, épinglez une révision v2 précise ; n’utilisez pas <code>@latest</code>.
+> Le chantier v2 est en préversion sur la branche <code>feature/v2</code>. Le chemin <code>github.com/goyourt/yogourt</code> est conservé sans suffixe. Pour tester ces changements incompatibles avec la v1, épinglez un commit précis ; n’utilisez pas <code>@latest</code>. Le versionnement de publication reste à décider : un tag Go <code>v2.x</code> exige un chemin de module <code>/v2</code>. Le CLI stable v0.5 n’est pas compatible avec cette organisation.
 
 ## Documentation
 
@@ -14,6 +14,7 @@ Yogourt est un framework Go pour construire des API avec Gin, un routage basé s
 | [Services](docs/services.md) | Modèles, base de données, authentification, mots de passe et fichiers |
 | [Autorisation](docs/authorization.md) | RBAC, ABAC, permissions par route, scopes et statuts HTTP |
 | [Migration vers la v2](docs/migration-v2.md) | Changements incompatibles et checklist de migration |
+| [Suivi de sécurité](docs/security-remediation-2026-09-12.md) | Correctifs, commits et validations de septembre 2026 |
 
 ## Prérequis
 
@@ -76,7 +77,7 @@ cors:
     - Authorization
 ~~~
 
-Sans origine explicite, le runtime active désormais <code>AllowAllOrigins</code> sans panic. Pour la production, conservez une liste d’origines fermée. Voir la [configuration CORS](docs/configuration.md#cors).
+Sans origine explicite et sans <code>allow_all_origins: true</code>, aucun middleware CORS n’est installé : les requêtes du navigateur depuis une autre origine ne sont pas autorisées. Voir la [configuration CORS](docs/configuration.md#cors).
 
 ### 3. Ajouter le middleware
 
@@ -216,6 +217,6 @@ Sur une plateforme sans support des plugins Go, le test se saute de lui-même av
 - les plugins Go ne sont pas portables vers Windows et sont sensibles à toute différence de toolchain ou de dépendances ;
 - le runtime vérifie uniquement l’existence des fichiers <code>.so</code>, pas leur fraîcheur ;
 - une collision méthode/route n’est pas détectée avant l’enregistrement et peut provoquer un panic Gin ;
-- le fournisseur de base de données est PostgreSQL uniquement — <code>database.type</code> refuse toute autre valeur au démarrage. TLS, chemin de recherche des schémas et bornes du pool se règlent par <code>database.ssl_mode</code>, <code>database.search_path</code> et <code>database.pool</code> ; sans ces clés la connexion reste en clair, comme avant.
+- le fournisseur de base de données est PostgreSQL uniquement. Sur TCP, il exige <code>verify-full</code> ; le transport local par socket Unix demande une exception explicite. Le chemin de recherche des schémas et les bornes du pool se règlent par <code>database.search_path</code> et <code>database.pool</code> ; voir le [durcissement du runtime](docs/runtime-security.md).
 
 Ces contraintes sont détaillées dans les guides afin de ne pas les confondre avec des garanties de la future version stable.

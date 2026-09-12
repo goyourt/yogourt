@@ -601,11 +601,31 @@ Une application avec sa propre authentification appelle `services.AttachSubject(
 
 Le Lot 0 du chantier a durci cette chaîne : algorithme JWT restreint à HS256, claim `sub` exigé non vide (chaîne opaque, sans validation de format), secret de 32 octets minimum vérifié au démarrage, et une panne de base pendant l'authentification répond 503 — jamais 401.
 
+## Observation des décisions et des mutations
+
+Enregistrez un <code>authorization.WithDecisionHook</code> dans les options du
+moteur pour observer ses décisions. Le <code>DecisionEvent</code> contient le
+type de contrôle (<code>permission</code> pour RBAC, <code>full</code> pour une
+décision complète), l’identité du sujet, l’action, le scope, le résultat,
+la raison et la durée. Il ne contient ni ressource métier ni attributs du sujet.
+Les refus anonymes du middleware émettent aussi un événement.
+
+Pour suivre l’administration des droits, enveloppez le store avec
+<code>authorization.AuditGrantAdmin(store, hook)</code> et utilisez ce wrapper
+dans les routes de mutation. Son <code>AuditEvent</code> rapporte les opérations
+réussies et échouées ; les lectures n’émettent pas d’événement. L’acteur peut
+être lu depuis le contexte du hook. Le store reste enregistré directement
+comme fournisseur de grants et pour synchroniser le catalogue de permissions.
+
+Les hooks sont synchrones et ne modifient pas la décision ni le résultat de la
+mutation. Évitez d’y effectuer des traitements lents ; confiez leur stockage à
+une file applicative et adaptez la rétention à la sensibilité des identifiants.
+
 ## Limites actuelles
 
 - renommer un dossier change la permission dérivée : l'ancienne reste en base (synchronisation additive) et les bindings qui la référencent deviennent inopérants — à traiter comme une migration de données (Django a le même travers) ;
 - aucune interface d'administration n'est livrée : le framework fournit le contrat `GrantAdmin` et les routes sont à écrire côté application (voir ci-dessus) ;
 - pas de commande CLI `yogourt routes` ni `permissions sync` ;
-- pas de cache des grants entre requêtes : un `Resolve` (deux si scope ≠ global) par contrôle ;
+- pas de cache des grants entre requêtes : dans une requête, la mémorisation isole chaque moteur, sujet et scope ; elle évite les résolutions répétées, sans mémoriser les erreurs du fournisseur ;
 - l'ADR consolidant les décisions de conception reste à rédiger ;
 - le chargement des plugins impose toujours les contraintes du package `plugin` de Go (voir [Routage](routing.md)).

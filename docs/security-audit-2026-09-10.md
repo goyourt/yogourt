@@ -1,5 +1,8 @@
 # Audit de sécurité Yogourt — 10 septembre 2026
 
+> État historique au moment de l’audit. Les correctifs et leur validation sont
+> consignés dans le [suivi du 12 septembre](security-remediation-2026-09-12.md).
+
 Finalisé le 11 septembre 2026 après reprise ; les empreintes des sources confirment que l'état audité n'a pas changé depuis la revue et le scan du 10 septembre.
 
 Le code présente **13 constats prioritaires : 5 de gravité élevée, 7 moyenne et 1 faible**. Les priorités sont de corriger le langage de filtres SQL, mettre à jour la chaîne Go/dépendances, borner les uploads avant leur parsing et fiabiliser le compteur d'échecs de connexion. L'exposition de plusieurs défauts dépend de l'intégration applicative ; ces conditions sont précisées ci-dessous.

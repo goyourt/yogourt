@@ -1,0 +1,43 @@
+{
+  "date": "2026-09-12",
+  "source_commit": "0ed714610fd8fb9bb89a43810f18f6cb8efc3e8f",
+  "branch": "feature/v2",
+  "go_version": "go1.26.8 darwin/arm64",
+  "checks": {
+    "go_test_all_with_postgresql_and_redis": "passed, exit 0",
+    "go_test_race_all_with_postgresql_and_redis": "passed, exit 0",
+    "go_vet": "passed, exit 0",
+    "go_mod_verify": "all modules verified",
+    "plugin_integration": "passed, 5 route plugins compiled and loaded, no skip",
+    "migration": "passed against PostgreSQL 15.16: normalized pg_dump schema comparison, twice applied, seed preserved",
+    "redis": "passed against Redis 8.10.1: 32 concurrent records, TTL, 12-hour retention, 25-hour expiry"
+  },
+  "govulncheck": {
+    "exit_code": 0,
+    "config": {
+      "protocol_version": "v1.0.0",
+      "scanner_name": "govulncheck",
+      "scanner_version": "v1.8.0",
+      "db": "https://vuln.go.dev",
+      "db_last_modified": "2026-09-10T14:48:42Z",
+      "go_version": "go1.26.8",
+      "scan_level": "symbol",
+      "scan_mode": "source"
+    },
+    "findings": [
+      {
+        "osv": "GO-2026-5932",
+        "trace": [
+          {
+            "module": "golang.org/x/crypto",
+            "version": "v0.56.0"
+          }
+        ]
+      }
+    ],
+    "symbol_findings": 0,
+    "package_findings": 0,
+    "module_findings": 1
+  },
+  "module_path_decision": "keep github.com/goyourt/yogourt without /v2; no publication or tag performed"
+}
