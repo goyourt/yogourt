@@ -28,12 +28,15 @@ database:
   host: "${DB_HOST}"
   port: 5432
   db: "${DB_NAME}"
+  ssl_mode: "verify-full"
 
 cache:
   host: "${REDIS_HOST}"
   port: "6379"
   password: "${REDIS_PASSWORD}"
   db: 0
+  tls:
+    enabled: true
 
 paths:
   route_folder: "api"
@@ -42,6 +45,8 @@ security:
   secret_key: "${JWT_SECRET}"
   hash_cost: 12
   token_expires: 60
+  token_issuer: "https://api.example.com"
+  token_audience: "example-api"
   password_minimum_length: 12
   password_special_char_required: true
   password_number_required: true
@@ -76,7 +81,7 @@ Le champ <code>cors.max_age</code> accepte un nombre de secondes (<code>3600</co
 | --- | --- | --- |
 | <code>app_name</code> | chaîne | Métadonnée applicative |
 | <code>version</code> | chaîne | Version journalisée au démarrage, avec <code>app_name</code> |
-| <code>mode</code> | chaîne | Mode applicatif. <code>production</code> rend fatal au démarrage un <code>security.secret_key</code> vide ou trop court et met Gin en mode release ; <code>test</code> met Gin en mode test ; toute autre valeur le laisse en debug. Une variable d’environnement <code>GIN_MODE</code> explicite reste prioritaire |
+| <code>mode</code> | chaîne | Mode applicatif. <code>production</code> rend fatale au démarrage une politique JWT incomplète et met Gin en mode release ; <code>test</code> met Gin en mode test ; toute autre valeur le laisse en debug. Une variable d’environnement <code>GIN_MODE</code> explicite reste prioritaire |
 | <code>env_files</code> | chaîne ou liste | Fichiers dotenv chargés avant l’expansion du YAML |
 
 ### Serveur
@@ -88,6 +93,18 @@ Le champ <code>cors.max_age</code> accepte un nombre de secondes (<code>3600</co
 | <code>server.cors</code> | booléen | Interrupteur CORS. <code>false</code> retire le middleware et la réponse au préflight ; clé absente ou <code>true</code> laisse la section <code>cors</code> décider |
 | <code>server.base_path</code> | chaîne | Préfixe HTTP de toutes les routes ; <code>/api</code> si la valeur est vide |
 | <code>server.base_url</code> | chaîne | URL publique retournée par <code>services.GetBaseUrl</code> ; reconstruite depuis <code>server.host</code> et <code>server.port</code> si la valeur est vide |
+| <code>server.trusted_proxies</code> | liste | IP ou CIDR des reverse proxies de confiance ; aucun par défaut |
+| <code>server.read_header_timeout</code> | durée | Lecture des en-têtes ; défaut <code>5s</code> |
+| <code>server.read_timeout</code> | durée | Lecture de la requête ; défaut <code>30s</code> |
+| <code>server.write_timeout</code> | durée | Écriture de la réponse ; défaut <code>30s</code> |
+| <code>server.idle_timeout</code> | durée | Attente sur connexion persistante ; défaut <code>2m</code> |
+| <code>server.max_header_bytes</code> | entier | Limite des en-têtes ; défaut 1 Mio, maximum 8 Mio |
+| <code>server.max_body_bytes</code> | entier | Limite du corps avant parsing ; défaut 32 Mio, maximum 1 Gio |
+
+Zéro sélectionne les valeurs par défaut de ces budgets HTTP ; il ne les désactive
+pas. Les délais négatifs ou supérieurs à 10 minutes sont refusés. Le plafond du
+corps s’applique aussi aux uploads multipart, en plus de leur limite par fichier.
+Voir le [durcissement HTTP et TLS](runtime-security.md).
 
 <code>server.host</code> est un nom d’hôte ou une adresse IP sans schéma ni port, par exemple <code>127.0.0.1</code>, <code>localhost</code> ou <code>::1</code>. Le port vient de <code>server.port</code>.
 
@@ -135,7 +152,8 @@ l’emporte sur ce champ, voir le [guide de routage](routing.md).
 | <code>database.host</code> | chaîne | Hôte PostgreSQL |
 | <code>database.port</code> | entier | Port PostgreSQL |
 | <code>database.db</code> | chaîne | Nom de base ; remplace l’ancienne clé <code>dbname</code> |
-| <code>database.ssl_mode</code> | chaîne | Mode TLS libpq : <code>disable</code>, <code>allow</code>, <code>prefer</code>, <code>require</code>, <code>verify-ca</code>, <code>verify-full</code> ; <code>disable</code> si la valeur est vide. Toute autre valeur arrête le processus |
+| <code>database.ssl_mode</code> | chaîne | <code>verify-full</code> par défaut et obligatoire sur TCP ; <code>disable</code> uniquement pour l’exception socket locale explicite |
+| <code>database.allow_insecure_local_socket</code> | booléen | Autorise <code>ssl_mode: disable</code> avec un chemin absolu de socket Unix ; refusé pour un hôte TCP |
 | <code>database.ssl_root_cert</code> | chaîne | Chemin du certificat d’autorité vérifié par <code>verify-ca</code> et <code>verify-full</code> |
 | <code>database.ssl_cert</code> | chaîne | Chemin du certificat client |
 | <code>database.ssl_key</code> | chaîne | Chemin de la clé privée du certificat client |
@@ -145,10 +163,12 @@ l’emporte sur ce champ, voir le [guide de routage](routing.md).
 | <code>database.pool.conn_max_lifetime</code> | durée | Âge maximal d’une connexion ; sans limite si <code>0</code> |
 | <code>database.pool.conn_max_idle_time</code> | durée | Durée d’inactivité maximale d’une connexion ; sans limite si <code>0</code> |
 
-Le fournisseur ne construit qu’une connexion PostgreSQL. Le DSN n’impose plus
-<code>sslmode=disable</code> : c’est la valeur par défaut de
-<code>database.ssl_mode</code>, celle d’une configuration qui n’a jamais écrit la
-clé, et un déploiement exigeant TLS la remplace.
+Le fournisseur ne construit qu’une connexion PostgreSQL. Il exige désormais
+la vérification du certificat et du nom du serveur sur TCP. Pour une base de
+développement jointe par socket Unix, l’exception doit être déclarée avec
+<code>ssl_mode: disable</code> et
+<code>allow_insecure_local_socket: true</code>.
+Les paramètres SQL sont masqués dans le logger GORM du fournisseur.
 
 ~~~yaml
 database:
@@ -191,6 +211,14 @@ processus : l’appel suivant retente.
 | <code>cache.port</code> | chaîne | Port Redis, volontairement typé comme chaîne |
 | <code>cache.password</code> | chaîne | Mot de passe Redis |
 | <code>cache.db</code> | entier | Index de base Redis |
+| <code>cache.tls.enabled</code> | booléen | Active TLS avec vérification du certificat et du nom du serveur, TLS 1.2 minimum |
+| <code>cache.tls.server_name</code> | chaîne | Nom attendu du serveur ; <code>cache.host</code> par défaut |
+| <code>cache.tls.ca_file</code> | chaîne | Fichier PEM d’autorités supplémentaires ; autorités système sinon |
+| <code>cache.tls.cert_file</code> | chaîne | Certificat client facultatif, à fournir avec la clé |
+| <code>cache.tls.key_file</code> | chaîne | Clé privée du certificat client |
+
+Activez TLS lorsque Redis est joint sur un réseau. Les options de certificat
+sans <code>cache.tls.enabled: true</code> sont refusées.
 
 Le client est créé à la première utilisation de <code>providers.GetCache()</code>, qui
 n'est mémorisé qu'après un <code>PING</code> réussi. Une instance injoignable est donc
@@ -256,7 +284,9 @@ aujourd’hui.
 | --- | --- | --- |
 | <code>security.secret_key</code> | chaîne | Secret de signature JWT ; 32 octets minimum exigés |
 | <code>security.hash_cost</code> | entier | Coût bcrypt ; 12 si la valeur est 0 |
-| <code>security.token_expires</code> | entier | Durée de vie du token, en minutes |
+| <code>security.token_expires</code> | entier | Durée de vie du token, en minutes, strictement positive |
+| <code>security.token_issuer</code> | chaîne | Émetteur obligatoire, ajouté et vérifié dans <code>iss</code> |
+| <code>security.token_audience</code> | chaîne | Audience obligatoire, ajoutée et vérifiée dans <code>aud</code> |
 | <code>security.password_minimum_length</code> | entier | Longueur minimale, en octets ; <code>0</code> n’exige aucune longueur |
 | <code>security.password_special_char_required</code> | booléen | Exige un caractère Unicode de ponctuation ou symbole |
 | <code>security.password_number_required</code> | booléen | Exige un chiffre Unicode |
@@ -265,7 +295,10 @@ aujourd’hui.
 
 Ces cinq champs ne sont lus que par <code>services.IsPasswordValid</code>, que le framework n’appelle jamais : la route d’inscription ou de changement de mot de passe doit l’appeler elle-même. Les drapeaux sont indépendants et cumulatifs ; à <code>false</code> ou absents, le contrôle correspondant n’a pas lieu. Un mot de passe vide est toujours refusé, mais sans aucune de ces clés c’est le seul cas rejeté.
 
-Utilisez un secret JWT long, aléatoire et non vide : <code>security.secret_key</code> est validé. Un secret vide ou de moins de 32 octets est journalisé en warning au démarrage hors production et refuse le démarrage lorsque <code>mode</code> vaut <code>production</code> ; les services de token échouent de leur côté tant qu’il n’est pas corrigé.
+Utilisez un secret JWT aléatoire d’au moins 32 octets, un émetteur, une audience
+et une durée de vie positive. Une politique incomplète est signalée au démarrage
+hors production et empêche le démarrage en <code>production</code>. Les services
+de token la refusent dans tous les modes. Voir la [politique JWT](auth-policy.md).
 
 ### CORS
 
@@ -344,5 +377,5 @@ Les fournisseurs sont des singletons chargés une seule fois. Une erreur de lect
 ## Limites actuelles
 
 - les clés YAML inconnues sont signalées au démarrage, mais jamais fatales : la valeur reste ignorée ;
-- aucune validation globale n’empêche des valeurs vides ou incohérentes, à l’exception de <code>security.secret_key</code>, <code>database.type</code>, <code>database.ssl_mode</code>, <code>server.base_path</code> et <code>cors.max_age</code>, contrôlés au démarrage ;
+- la validation porte sur la politique JWT, les budgets HTTP, les proxies, le transport PostgreSQL, le préfixe HTTP et CORS ; elle ne couvre pas toutes les valeurs applicatives. La configuration TLS Redis est vérifiée lors de la création du client ;
 - rien n’est rechargé à chaud, et les chemins des deux fichiers sont codés en dur.

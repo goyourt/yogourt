@@ -118,8 +118,12 @@ Une page ou une taille inférieure à 1 désactive la pagination.
 - une clé comme <code>profile.city</code> joint et précharge la relation <code>Profile</code> ;
 - une slice produit une condition <code>IN</code> ;
 - <code>database.Like("text")</code> produit une recherche <code>LIKE %text%</code> ;
-- <code>database.Or(value)</code> demande une condition OR ;
-- la clé spéciale <code>orderBy</code> est expérimentale.
+- <code>database.Or(value)</code> place le filtre dans un groupe d’alternatives, combiné avec <code>AND</code> aux filtres ordinaires ;
+- la clé spéciale <code>orderBy</code> accepte un <code>database.OrderBy(colonne, direction)</code> ou une slice de <code>database.Ordering</code>, avec <code>database.Ascending</code> ou <code>database.Descending</code> comme direction.
+
+Les noms de colonnes et de relations sont validés contre le schéma GORM. Les
+chaînes ordinaires restent des valeurs littérales et les expressions SQL brutes
+de tri sont refusées. Voir les [filtres typés](query-filters.md).
 
 N’utilisez jamais directement des noms de colonne, relation ou ordre provenant d’une requête HTTP. Ces valeurs participent à la construction SQL et doivent venir d’une liste applicative fermée.
 
@@ -270,12 +274,12 @@ subject, err := services.GetStringClaim(parsed, "sub")
 
 Le secret de signature est validé : <code>services.ValidateSecretKey</code> refuse un secret vide ou de moins de 32 octets, et <code>CreateToken</code> comme <code>ValidToken</code> échouent alors sans produire ni accepter de token. <code>ValidToken</code> fixe aussi explicitement l’algorithme accepté (<code>HS256</code>), ce qui ferme la substitution d’algorithme. Le démarrage signale le problème avant la première requête : hors production un secret vide ou trop court n’est que journalisé en warning, en mode <code>production</code> il empêche le démarrage.
 
-Limites de sécurité restantes :
-
-- aucun issuer ou audience n’est vérifié ;
-- l’expiration n’est pas explicitement exigée pour les tokens qui ne sont pas créés par Yogourt.
-
-Pour un usage sensible, complétez ces helpers par une politique de claims (issuer, audience, expiration obligatoire) dans une couche applicative.
+La validation exige aussi <code>exp</code>, <code>iss</code> et <code>aud</code>.
+Configurez <code>security.token_issuer</code> et
+<code>security.token_audience</code>, ainsi qu’une durée
+<code>security.token_expires</code> strictement positive. Les tokens émis avant
+cette politique doivent être renouvelés. Voir la [politique JWT](auth-policy.md).
+La révocation et la rotation des clés restent à organiser dans l’application.
 
 ## Mots de passe
 
@@ -308,19 +312,24 @@ Les drapeaux sont indépendants et cumulatifs ; à <code>false</code> ou absents
 
 L’erreur retournée par <code>CheckPassword</code> ne doit **jamais** être renvoyée au client, même reformulée : elle distingue un mot de passe faux (<code>bcrypt.ErrMismatchedHashAndPassword</code>) d’un hash malformé, tronqué ou de version inconnue (<code>bcrypt.ErrHashTooShort</code>, <code>bcrypt.HashVersionTooNewError</code>…). Cette différence indique à un attaquant si le compte existe et comment son identifiant est stocké. Journalisez-la si besoin, et répondez un message générique unique :
 
+Préparez au démarrage un <code>dummyPasswordHash</code> avec
+<code>GetHashedPassword</code>, au même coût que les mots de passe stockés.
+Le chemin « utilisateur inconnu » effectue ainsi aussi une comparaison bcrypt :
+
 ~~~go
 var user models.User
-if err := database.GetOneBy(&user, map[string]any{"username": req.Username}); err != nil {
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		routing.RespondAndAbort(c, http.StatusUnauthorized, "Invalid credentials")
-		return
-	}
+lookupErr := database.GetOneBy(&user, map[string]any{"username": req.Username})
+if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
 	routing.RespondServiceUnavailable(c)
 	return
 }
 
-// Utilisateur inconnu et mot de passe faux répondent strictement la même chose.
-if err := services.CheckPassword(user.Password, req.Password); err != nil {
+hash := dummyPasswordHash
+if lookupErr == nil {
+	hash = user.Password
+}
+passwordErr := services.CheckPassword(hash, req.Password)
+if lookupErr != nil || passwordErr != nil {
 	routing.RespondAndAbort(c, http.StatusUnauthorized, "Invalid credentials")
 	return
 }
@@ -334,7 +343,14 @@ count, err := services.GetPasswordFailureCount(username)
 ~~~
 
 Les deux appels remontent l’erreur de <code>GetCache()</code> si Redis est injoignable.
-Le compteur regarde une fenêtre de 24 heures, mais les entrées anciennes ne sont actuellement ni supprimées ni associées à un TTL. Les appels utilisent aussi <code>context.Background()</code> et plusieurs échecs dans la même seconde peuvent partager le même membre Redis.
+Chaque échec possède un événement distinct. Redis supprime les événements hors
+de la fenêtre de 24 heures et applique un TTL au compteur. Utilisez
+<code>RecordPasswordFailure(ctx, username)</code> pour enregistrer et obtenir
+le total dans une même opération atomique, ou
+<code>GetPasswordFailureCountContext(ctx, username)</code> pour lire avec le
+contexte de la requête. Le seuil de verrouillage reste une décision applicative.
+Voir le [suivi des échecs](login-failures.md) pour le namespace et la transition
+depuis les anciennes clés.
 
 ## Fichiers
 
