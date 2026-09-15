@@ -158,6 +158,129 @@ func TestEmptyDatabaseHostCannotEnableTheLocalSocketException(t *testing.T) {
 	}
 }
 
+// A loopback host without the exception stays a network host: verify-full by
+// default, weaker modes refused — but the refusal names the key that unblocks
+// local development.
+func TestLoopbackWithoutExceptionBehavesLikeANetworkHost(t *testing.T) {
+	cfg := baseDatabaseConfig()
+	cfg.Host = "localhost"
+
+	mode, err := resolveDatabaseSSLMode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode != "verify-full" {
+		t.Fatalf("loopback default mode = %q, want verify-full", mode)
+	}
+
+	cfg.SSLMode = "disable"
+	_, err = resolveDatabaseSSLMode(cfg)
+	if err == nil {
+		t.Fatal("loopback host without allow_insecure_loopback accepted disable")
+	}
+	if !strings.Contains(err.Error(), "database.allow_insecure_loopback") {
+		t.Errorf("error %q does not name database.allow_insecure_loopback as the way out", err)
+	}
+}
+
+func TestLoopbackExceptionDefaultsToDisable(t *testing.T) {
+	cfg := baseDatabaseConfig()
+	cfg.Host = "localhost"
+	cfg.AllowInsecureLoopback = true
+
+	mode, err := resolveDatabaseSSLMode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode != "disable" {
+		t.Fatalf("loopback exception default mode = %q, want disable", mode)
+	}
+}
+
+// With the exception, ssl_mode keeps its say: an explicit mode is used as
+// declared, verify-full included.
+func TestLoopbackExceptionHonorsExplicitMode(t *testing.T) {
+	for _, want := range []string{"disable", "allow", "prefer", "require", "verify-ca", "verify-full"} {
+		cfg := baseDatabaseConfig()
+		cfg.Host = "localhost"
+		cfg.AllowInsecureLoopback = true
+		cfg.SSLMode = want
+
+		mode, err := resolveDatabaseSSLMode(cfg)
+		if err != nil {
+			t.Errorf("resolveDatabaseSSLMode(%q) = %v, want no error", want, err)
+			continue
+		}
+		if mode != want {
+			t.Errorf("loopback exception mode = %q, want %q", mode, want)
+		}
+	}
+}
+
+// The exception recognizes the literals a developer types, IPv6 and bracketed
+// forms included.
+func TestLoopbackExceptionCoversLoopbackLiterals(t *testing.T) {
+	for _, host := range []string{"localhost", "127.0.0.1", "127.0.0.2", "::1", "[::1]"} {
+		cfg := baseDatabaseConfig()
+		cfg.Host = host
+		cfg.AllowInsecureLoopback = true
+
+		mode, err := resolveDatabaseSSLMode(cfg)
+		if err != nil {
+			t.Errorf("resolveDatabaseSSLMode(host %q) = %v, want no error", host, err)
+			continue
+		}
+		if mode != "disable" {
+			t.Errorf("host %q mode = %q, want disable", host, mode)
+		}
+	}
+}
+
+// The exception never reaches past the machine: a name is not resolved, so a
+// DNS entry answering 127.0.0.1 stays a network host.
+func TestLoopbackExceptionCannotWeakenNetworkTransport(t *testing.T) {
+	for _, host := range []string{"db.internal", "loopback.example.com", "10.0.0.1"} {
+		cfg := baseDatabaseConfig()
+		cfg.Host = host
+		cfg.AllowInsecureLoopback = true
+
+		_, err := resolveDatabaseSSLMode(cfg)
+		if err == nil {
+			t.Errorf("host %q accepted allow_insecure_loopback", host)
+			continue
+		}
+		if !strings.Contains(err.Error(), "database.allow_insecure_loopback") {
+			t.Errorf("error %q does not name the configuration key", err)
+		}
+	}
+}
+
+func TestLoopbackExceptionDoesNotApplyToUnixSockets(t *testing.T) {
+	cfg := baseDatabaseConfig()
+	cfg.Host = "/private/tmp/postgres"
+	cfg.AllowInsecureLoopback = true
+
+	if _, err := resolveDatabaseSSLMode(cfg); err == nil {
+		t.Fatal("Unix socket host accepted allow_insecure_loopback")
+	}
+}
+
+// An empty host is the default socket: it keeps today's verify-full and the
+// loopback exception has nothing to apply to.
+func TestEmptyDatabaseHostIgnoresTheLoopbackException(t *testing.T) {
+	cfg := baseDatabaseConfig()
+	cfg.Host = ""
+	cfg.AllowInsecureLoopback = true
+
+	mode, err := resolveDatabaseSSLMode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode != "verify-full" {
+		t.Fatalf("empty host mode = %q, want verify-full", mode)
+	}
+}
+
 // The pool section reads a duration string as well as a number of seconds.
 func TestDatabasePoolDurations(t *testing.T) {
 	cfg := &MainConfig{}

@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -126,8 +127,10 @@ var sslModes = map[string]bool{
 }
 
 // resolveDatabaseSSLMode permits clear text only for an explicitly approved
-// local Unix socket. Network hosts use verify-full and cannot opt down to an
-// opportunistic or unauthenticated TLS mode.
+// local transport: a Unix socket under AllowInsecureLocalSocket, or a TCP
+// loopback host under AllowInsecureLoopback. Other network hosts use
+// verify-full and cannot opt down to an opportunistic or unauthenticated TLS
+// mode.
 func resolveDatabaseSSLMode(cfg DatabaseConfig) (string, error) {
 	mode := strings.ToLower(strings.TrimSpace(cfg.SSLMode))
 	if mode != "" && !sslModes[mode] {
@@ -135,6 +138,9 @@ func resolveDatabaseSSLMode(cfg DatabaseConfig) (string, error) {
 	}
 
 	if isLocalSocketHost(cfg.Host) {
+		if cfg.AllowInsecureLoopback {
+			return "", fmt.Errorf("database.allow_insecure_loopback only applies when database.host is a TCP loopback host such as localhost, 127.0.0.1 or ::1")
+		}
 		if !cfg.AllowInsecureLocalSocket {
 			return "", fmt.Errorf("database host %q is a local Unix socket: set database.allow_insecure_local_socket: true to allow its unencrypted local transport", cfg.Host)
 		}
@@ -146,6 +152,26 @@ func resolveDatabaseSSLMode(cfg DatabaseConfig) (string, error) {
 
 	if cfg.AllowInsecureLocalSocket {
 		return "", fmt.Errorf("database.allow_insecure_local_socket only applies when database.host is an explicit absolute Unix socket path")
+	}
+
+	if isLoopbackHost(cfg.Host) {
+		if cfg.AllowInsecureLoopback {
+			if mode == "" {
+				return "disable", nil
+			}
+			return mode, nil
+		}
+		if mode == "" {
+			return defaultNetworkSSLMode, nil
+		}
+		if mode != "verify-full" {
+			return "", fmt.Errorf("database.ssl_mode %q does not verify a network server identity: use verify-full, or set database.allow_insecure_loopback: true for this loopback host", cfg.SSLMode)
+		}
+		return mode, nil
+	}
+
+	if cfg.AllowInsecureLoopback && strings.TrimSpace(cfg.Host) != "" {
+		return "", fmt.Errorf("database.allow_insecure_loopback only applies when database.host is a TCP loopback host such as localhost, 127.0.0.1 or ::1")
 	}
 	if mode == "" {
 		return defaultNetworkSSLMode, nil
@@ -159,6 +185,23 @@ func resolveDatabaseSSLMode(cfg DatabaseConfig) (string, error) {
 func isLocalSocketHost(host string) bool {
 	host = strings.TrimSpace(host)
 	return host != "" && filepath.IsAbs(host)
+}
+
+// isLoopbackHost recognizes the literals a developer points at a local
+// Postgres: "localhost" and any literal loopback IP, bracketed or not. It
+// never resolves a name — a DNS entry answering 127.0.0.1 is still a network
+// host here, because what it answers is not under this configuration's
+// control.
+func isLoopbackHost(host string) bool {
+	host = strings.TrimSpace(host)
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = host[1 : len(host)-1]
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // buildDSN assembles the libpq keyword/value connection string.
