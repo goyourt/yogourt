@@ -168,6 +168,12 @@ type DatabaseConfig struct {
 	// explicitly configured local Unix-domain socket. TCP connections and an
 	// absent host require verify-full.
 	AllowInsecureLocalSocket bool `yaml:"allow_insecure_local_socket"`
+	// AllowInsecureLoopback is the explicit clear-text exception for a TCP
+	// loopback host (localhost, 127.0.0.1, ::1). With it, ssl_mode may select
+	// any libpq mode and defaults to "disable" — the case of a local Postgres
+	// without TLS, such as the stock docker-compose image. Without it a
+	// loopback host is a network host and requires verify-full.
+	AllowInsecureLoopback bool `yaml:"allow_insecure_loopback"`
 	// SearchPath is the schema search path of every session opened by the
 	// pool. Empty leaves the server default ("$user", public), so a
 	// deployment holding its tables in a named schema no longer has to
