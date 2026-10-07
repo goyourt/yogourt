@@ -100,6 +100,28 @@ func must(err error) {
 
 Sans `routing.WithAuthorizer(engine)`, rien ne change : aucune déclaration exigée, un symbole `Permissions` présent est simplement ignoré avec un warning.
 
+#### Pourquoi le moteur est « publié »
+
+`routing.WithAuthorizer(engine)` ne conserve pas le moteur dans la
+configuration du routeur : il le confie à `authorization.Publish(engine)` avant
+de charger les routes. Les handlers d'une application Yogourt sont compilés en
+plugins Go, séparés du `main` ; `c.Authorize`, `c.Can` et le middleware
+paresseux `ginmw.Middleware(action)` ne peuvent donc pas recevoir le moteur en
+argument et le retrouvent avec `authorization.Published()` au moment de la
+requête.
+
+Le moteur publié est en écriture unique : un second `Publish` échoue avec
+`authorization.ErrAlreadyPublished`, ce qui interdit de remplacer les règles
+d'autorisation une fois le serveur démarré. Sans moteur publié,
+`ginmw.Middleware` et `c.Authorize` répondent `500`, et `c.Can` ou
+`c.HasPermission` renvoient `false` : jamais une autorisation.
+
+Dans une application Yogourt, il n'y a rien d'autre à faire que
+`routing.WithAuthorizer(engine)`. Appelez `authorization.Publish` vous-même
+uniquement dans une application Gin sans Yogourt qui veut le middleware
+paresseux ; quand le moteur peut être injecté explicitement, préférez
+`ginmw.MiddlewareFor(engine, action)`, qui ne dépend pas de la publication.
+
 ### 3. Les permissions des routes (rien à déclarer)
 
 Les permissions sont **dérivées par convention** du dossier et de la méthode HTTP — à la manière de Django, adapté au routage par fichiers. Aucune déclaration n'est nécessaire :
