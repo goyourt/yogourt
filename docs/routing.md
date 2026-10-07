@@ -4,7 +4,7 @@ Yogourt transforme les dossiers Go d’un répertoire source en routes Gin. La p
 
 ## Convention de fichiers
 
-<code>routing.Initialize("api")</code> parcourt récursivement le dossier <code>api</code> depuis le répertoire de lancement.
+<code>routing.Initialize()</code> parcourt récursivement le dossier déclaré par <code>paths.route_folder</code> — ici <code>api</code> — depuis le répertoire de lancement.
 
 ~~~text
 api/
@@ -26,7 +26,45 @@ api/
 
 Le nom du fichier n’entre pas dans l’URL. Tous les fichiers <code>.go</code> sont chargés, sauf ceux terminés par <code>_test.go</code>.
 
-Le préfixe HTTP est actuellement fixé à <code>/api</code>. Par exemple, <code>routing.Initialize("routes")</code> scanne le dossier <code>routes</code>, mais continue de publier les URLs sous <code>/api</code>.
+Le dossier scanné et le préfixe HTTP sont deux réglages distincts. <code>route_folder: "routes"</code> scanne le dossier <code>routes</code> et publie sous <code>/api</code>, le préfixe par défaut.
+
+## Préfixe HTTP
+
+Le préfixe vient, dans cet ordre : de l’option <code>routing.WithPrefix</code>, du champ <code>server.base_path</code> de la configuration, puis de la valeur par défaut <code>/api</code>.
+
+~~~go
+routing.Initialize(routing.WithPrefix("/v1"))   // /v1/users
+routing.Initialize(routing.WithPrefix("/"))     // /users
+routing.Initialize()                            // server.base_path, sinon /api
+~~~
+
+| Écriture | Préfixe retenu |
+| --- | --- |
+| <code>"/v1"</code>, <code>"v1"</code>, <code>"/v1/"</code> | <code>/v1</code> |
+| <code>"/api/v2"</code> | <code>/api/v2</code> |
+| <code>"/"</code> | racine : <code>api/users/route.go</code> répond sur <code>/users</code> |
+
+Un <code>base_path</code> vide ou absent n’est pas la racine, c’est le défaut <code>/api</code> : servir à la racine se demande explicitement avec <code>/</code>.
+
+Un préfixe contenant un paramètre Gin (<code>:id</code>, <code>*path</code>) ou une espace arrête le démarrage, en nommant sa source — l’option ou le champ de configuration.
+
+Le préfixe désigne un point de montage, pas une ressource : il est exclu des permissions dérivées par convention. Sous <code>/v1</code>, <code>api/users/route.go</code> dérive toujours <code>users.read</code>, jamais <code>v1.read</code>.
+
+## Dossier des routes
+
+Le dossier scanné vient du seul <code>paths.route_folder</code> du fichier de
+configuration :
+
+~~~yaml
+paths:
+  route_folder: "api"
+~~~
+
+<code>Initialize</code> ne prend pas de dossier en argument : le dossier d’un
+déploiement est un réglage, et le déclarer à deux endroits permettait à un
+programme de contredire son propre <code>yogourt.yaml</code>. Sans
+<code>route_folder</code>, le démarrage échoue en nommant la clé. Voir le
+[guide de configuration](configuration.md).
 
 ## Segments dynamiques
 
@@ -142,7 +180,7 @@ Types pris en charge :
 - <code>float32</code> et <code>float64</code> ;
 - pointeurs vers ces types.
 
-L’injection concerne uniquement les paramètres de chemin Gin. Elle ne lit ni la query string, ni les headers, ni le body. Une conversion impossible renvoie HTTP 400 avec une erreur JSON et interrompt le handler.
+L’injection concerne uniquement les paramètres de chemin Gin. Elle ne lit ni la query string, ni les headers, ni le body. Une conversion impossible interrompt le handler avec un HTTP 400 au corps générique — <code>{"error":"Invalid request parameters"}</code> — le détail de la conversion restant côté serveur, dans les logs.
 
 ## Body JSON
 
@@ -169,7 +207,7 @@ Passez un pointeur vers une structure. Une erreur de binding renvoie HTTP 422 :
 {"error":"Invalid request: argument mismatch"}
 ~~~
 
-Le helper tente aussi d’hydrater certaines relations qui implémentent <code>interfaces.BaseInterface</code> et possèdent un UUID. Les erreurs de base de données de cette hydratation ne sont actuellement pas remontées.
+Le helper tente aussi d’hydrater certaines relations qui implémentent <code>interfaces.BaseInterface</code> et possèdent un UUID. Une panne de base pendant cette hydratation interrompt désormais la requête avec un <code>503</code> générique. Un UUID inconnu, en revanche, laisse volontairement l’objet non hydraté et laisse tourner le handler : répondre autrement donnerait à un appelant anonyme un oracle d’existence sur la table référencée.
 
 ## Réponses
 
@@ -276,17 +314,17 @@ package main
 import "github.com/goyourt/yogourt/routing"
 
 func main() {
-	routing.Initialize("api")
+	routing.Initialize()
 }
 ~~~
 
-L’argument désigne le dossier à scanner depuis le répertoire courant. Le processus charge la configuration, installe CORS, charge le plugin middleware, charge les routes, puis écoute sur <code>&lt;server.host&gt;:&lt;server.port&gt;</code>. Si <code>server.host</code> est vide, l’adresse par défaut est <code>0.0.0.0</code> ; les adresses IPv6 sont correctement encadrées.
+<code>paths.route_folder</code> désigne le dossier à scanner depuis le répertoire courant. Le processus charge la configuration, installe CORS, charge le plugin middleware, charge les routes, puis écoute sur <code>&lt;server.host&gt;:&lt;server.port&gt;</code>. Si <code>server.host</code> est vide, l’adresse par défaut est <code>0.0.0.0</code> ; les adresses IPv6 sont correctement encadrées.
 
 ## Limites actuelles
 
 - une collision entre deux fichiers qui exposent la même méthode sur la même URL n’est pas détectée en amont et peut provoquer un panic Gin ;
 - les plugins sont chargés en concurrence, donc l’ordre d’enregistrement n’est pas déterministe ;
-- le préfixe URL reste <code>/api</code> ;
+- le préfixe URL est unique pour toute l’arborescence : aucun moyen de monter deux préfixes dans le même processus ;
 - le runtime dépend des contraintes d’ABI et de plateforme du paquet Go <code>plugin</code> ;
 - le support du race detector avec les plugins Go est limité ;
 - un plugin compilé avec une toolchain ou des dépendances différentes peut échouer dans <code>plugin.Open</code>.

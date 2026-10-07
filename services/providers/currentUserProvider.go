@@ -12,5 +12,11 @@ func GetCurrentUser(c *gin.Context) interfaces.BaseInterface {
 	if !exist {
 		return nil
 	}
-	return currentUser.(interfaces.BaseInterface)
+
+	user, ok := currentUser.(interfaces.BaseInterface)
+	if !ok {
+		return nil
+	}
+
+	return user
 }

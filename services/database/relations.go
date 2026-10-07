@@ -18,8 +18,17 @@ const likePatern = "LIKE"
 const orPatern = "OR"
 const orderByPatern = "orderBy"
 
-func JoinTables[T interfaces.BaseInterface](values map[string]any, objType *T) *gorm.DB {
-	query := providers.GetDB().Model(*objType)
+// JoinTables builds the query behind the read helpers: joins, conditions and
+// ordering derived from values. It returns the connection error when the
+// database is unreachable, since a query cannot be built without a
+// connection.
+func JoinTables[T interfaces.BaseInterface](values map[string]any, objType *T) (*gorm.DB, error) {
+	db, err := providers.GetDB()
+	if err != nil {
+		return nil, err
+	}
+
+	query := db.Model(*objType)
 	query.Statement.Parse(query.Statement.Model)
 	joinedTables := []string{dairy.ToTitle(query.Statement.Table)}
 	for key, value := range values {
@@ -42,22 +51,44 @@ func JoinTables[T interfaces.BaseInterface](values map[string]any, objType *T) *
 		query = addConditionPatern(query, key, value)
 	}
 
-	return query.Preload(clause.Associations)
+	return query.Preload(clause.Associations), nil
 }
 
-func HydrateRelation(obj interfaces.BaseInterface, table string, relation interfaces.BaseInterface, relationId int) {
+// HydrateRelation preloads the relation when it has not been loaded yet. It
+// returns GORM's error; call sites that ignore it keep compiling.
+func HydrateRelation(obj interfaces.BaseInterface, table string, relation interfaces.BaseInterface, relationId int) error {
 	if relationId == 0 || !reflect.ValueOf(relation).IsNil() {
-		return
+		return nil
 	}
 
-	providers.GetDB().Preload(table).Find(obj, obj.GetID())
+	db, err := providers.GetDB()
+	if err != nil {
+		return err
+	}
+
+	return db.Preload(table).Find(obj, obj.GetID()).Error
 }
 
-func HydrateManyToManyRelation[T interfaces.BaseInterface](obj interfaces.BaseInterface, table string, relation *[]T) {
-	if !reflect.ValueOf(relation).IsNil() {
-		return
+// HydrateManyToManyRelation preloads a many-to-many relation that has not been
+// loaded yet. It returns GORM's error; call sites that ignore it keep
+// compiling.
+//
+// relation is a pointer to the slice field to fill. The guard tests the SLICE,
+// not the pointer: a caller passes &model.Field, whose address is never nil, so
+// testing the pointer made the helper return immediately every time and never
+// preload anything. A nil slice means "not loaded"; an allocated slice, even
+// empty, is left alone.
+func HydrateManyToManyRelation[T interfaces.BaseInterface](obj interfaces.BaseInterface, table string, relation *[]T) error {
+	if relation == nil || *relation != nil {
+		return nil
 	}
-	providers.GetDB().Preload(table).Find(obj, obj.GetID())
+
+	db, err := providers.GetDB()
+	if err != nil {
+		return err
+	}
+
+	return db.Preload(table).Find(obj, obj.GetID()).Error
 }
 
 func UpsertRelations(c *gin.Context, obj interfaces.BaseInterface, relations []string) error {

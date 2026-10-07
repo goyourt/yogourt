@@ -9,7 +9,7 @@ import (
 func TestRoutePathForDynamicBracketSegment(t *testing.T) {
 	base := filepath.Join("project", "api")
 	full := filepath.Join(base, "users", "[id]", "index.go")
-	got := routePathFor(base, full)
+	got := routePathFor("/api", base, full)
 	want := "/api/users/:id"
 	if got != want {
 		t.Errorf("expected %s, got %s", want, got)
@@ -19,7 +19,7 @@ func TestRoutePathForDynamicBracketSegment(t *testing.T) {
 func TestRoutePathForStaticAndLegacyDynamicSegments(t *testing.T) {
 	base := filepath.Join("project", "api")
 	full := filepath.Join(base, "posts", "_slug", "comments", "[commentId]", "handler.go")
-	got := routePathFor(base, full)
+	got := routePathFor("/api", base, full)
 	want := "/api/posts/:slug/comments/:commentId"
 	if got != want {
 		t.Errorf("expected %s, got %s", want, got)
@@ -29,7 +29,7 @@ func TestRoutePathForStaticAndLegacyDynamicSegments(t *testing.T) {
 func TestRoutePathForDynamicTrailingUnderscoreSegment(t *testing.T) {
 	base := filepath.Join("project", "api")
 	full := filepath.Join(base, "users", "userId_", "posts", "postSlug_", "handler.go")
-	got := routePathFor(base, full)
+	got := routePathFor("/api", base, full)
 	want := "/api/users/:userId/posts/:postSlug"
 	if got != want {
 		t.Errorf("expected %s, got %s", want, got)
@@ -39,7 +39,7 @@ func TestRoutePathForDynamicTrailingUnderscoreSegment(t *testing.T) {
 func TestRoutePathForRootAPIFile(t *testing.T) {
 	base := filepath.Join("project", "api")
 	full := filepath.Join(base, "index.go")
-	got := routePathFor(base, full)
+	got := routePathFor("/api", base, full)
 	want := "/api"
 	if got != want {
 		t.Errorf("expected %s, got %s", want, got)
@@ -103,5 +103,30 @@ func writeRouteFile(t *testing.T, root, rel string) {
 	}
 	if err := os.WriteFile(path, []byte("package main\nfunc main() {}\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
+	}
+}
+
+func TestRoutePathForCustomPrefix(t *testing.T) {
+	base := filepath.Join("project", "api")
+	cases := []struct {
+		name   string
+		prefix string
+		rel    []string
+		want   string
+	}{
+		{"nested folder under a custom prefix", "/v1", []string{"users", "userId_", "index.go"}, "/v1/users/:userId"},
+		{"root file under a custom prefix", "/v1", []string{"index.go"}, "/v1"},
+		{"multi segment prefix", "/api/v2", []string{"users", "index.go"}, "/api/v2/users"},
+		{"nested folder at the root", "", []string{"users", "index.go"}, "/users"},
+		{"root file at the root", "", []string{"index.go"}, "/"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			full := filepath.Join(append([]string{base}, c.rel...)...)
+			if got := routePathFor(c.prefix, base, full); got != c.want {
+				t.Errorf("routePathFor(%q, …%v) = %q, want %q", c.prefix, c.rel, got, c.want)
+			}
+		})
 	}
 }
