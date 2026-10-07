@@ -119,6 +119,7 @@ Une page ou une taille inférieure à 1 désactive la pagination.
 - une slice produit une condition <code>IN</code> ;
 - <code>database.Like("text")</code> produit une recherche <code>LIKE %text%</code> ;
 - <code>database.Or(value)</code> place le filtre dans un groupe d’alternatives, combiné avec <code>AND</code> aux filtres ordinaires ;
+- <code>database.And(value)</code> rend explicite cette conjonction : le filtre reste hors du groupe <code>Or</code>, comme une valeur ordinaire ;
 - la clé spéciale <code>orderBy</code> accepte un <code>database.OrderBy(colonne, direction)</code> ou une slice de <code>database.Ordering</code>, avec <code>database.Ascending</code> ou <code>database.Descending</code> comme direction.
 
 Les noms de colonnes et de relations sont validés contre le schéma GORM. Les
