@@ -11,7 +11,7 @@ par le serveur :
 
 ```go
 filters := map[string]any{
-	"tenant_id": tenantID,
+	"tenant_id": database.And(tenantID),
 	"name":      database.Or(database.Like(search)),
 	"email":     database.Or(database.Like(search)),
 	"orderBy": []database.Ordering{
@@ -23,7 +23,10 @@ filters := map[string]any{
 `database.Like(text)` sélectionne explicitement `LIKE %text%`.
 `database.Or(value)` place le filtre dans un groupe d’alternatives. Tous les
 filtres ordinaires sont reliés avec `AND`, puis l’unique groupe `OR` est ajouté
-avec `AND`. L’exemple correspond donc à :
+avec `AND`. `database.And(value)` rend cette conjonction explicite : le filtre
+se comporte comme une valeur ordinaire et reste hors du groupe. `And` et `Or`
+acceptent un littéral, une slice ou un `Like`, mais ne s’imbriquent pas.
+L’exemple correspond donc à :
 
 ```text
 tenant_id = ? AND (name LIKE ? OR email LIKE ?)

@@ -302,13 +302,9 @@ func upsertRelation(tx *gorm.DB, writer DataWriter, resource interfaces.Resource
 }
 
 func filterExpression(column clause.Column, value any) (clause.Expression, bool, error) {
-	alternative := false
-	if operator, ok := value.(OrOperator); ok {
-		alternative = true
-		value = operator.value
-		if _, nested := value.(OrOperator); nested {
-			return nil, false, errors.New("nested Or operators are invalid")
-		}
+	value, alternative, err := unwrapCombinator(value)
+	if err != nil {
+		return nil, false, err
 	}
 
 	if operator, ok := value.(LikeOperator); ok {
@@ -321,6 +317,31 @@ func filterExpression(column clause.Column, value any) (clause.Expression, bool,
 		return clause.IN{Column: column, Values: sliceValues(value)}, alternative, nil
 	}
 	return clause.Eq{Column: column, Value: value}, alternative, nil
+}
+
+func unwrapCombinator(value any) (any, bool, error) {
+	var inner any
+	alternative := false
+	switch operator := value.(type) {
+	case OrOperator:
+		inner, alternative = operator.value, true
+	case AndOperator:
+		inner = operator.value
+	default:
+		return value, false, nil
+	}
+	if isCombinator(inner) {
+		return nil, false, errors.New("nested And and Or operators are invalid")
+	}
+	return inner, alternative, nil
+}
+
+func isCombinator(value any) bool {
+	switch value.(type) {
+	case OrOperator, AndOperator:
+		return true
+	}
+	return false
 }
 
 func isSliceOrArray(value any) bool {

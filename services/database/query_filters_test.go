@@ -60,6 +60,44 @@ func TestBuildQueryUsesTypedLikeAndGroupedAlternatives(t *testing.T) {
 	}
 }
 
+func TestBuildQueryKeepsExplicitAndOutsideAlternatives(t *testing.T) {
+	query, err := buildQuery(dryDB(t), &queryFilterRecord{}, map[string]any{
+		"tenant_id": And(42),
+		"name":      Or(Like("alice")),
+		"email":     Or(Like("example.test")),
+	})
+	if err != nil {
+		t.Fatalf("build query: %v", err)
+	}
+	statement, sql := renderedQuery(t, query)
+	if !strings.Contains(sql, "`query_filter_records`.`tenant_id` = ? AND (") {
+		t.Fatalf("explicit And must stay outside the alternatives group: %s", sql)
+	}
+	if len(statement.Vars) != 3 || statement.Vars[0] != 42 {
+		t.Fatalf("And must bind its value as one literal, got %#v", statement.Vars)
+	}
+
+	query, err = buildQuery(dryDB(t), &queryFilterRecord{}, map[string]any{"name": And(Like("alice"))})
+	if err != nil {
+		t.Fatalf("build query with And(Like): %v", err)
+	}
+	_, sql = renderedQuery(t, query)
+	if !strings.Contains(sql, "`query_filter_records`.`name` LIKE ?") || strings.Contains(sql, " OR ") {
+		t.Fatalf("And must keep the wrapped operator: %s", sql)
+	}
+
+	for name, value := range map[string]any{
+		"and in or":  Or(And("alice")),
+		"or in and":  And(Or("alice")),
+		"and in and": And(And("alice")),
+		"or in or":   Or(Or("alice")),
+	} {
+		if _, err := buildQuery(dryDB(t), &queryFilterRecord{}, map[string]any{"name": value}); err == nil {
+			t.Fatalf("%s must be rejected", name)
+		}
+	}
+}
+
 func TestBuildQueryRejectsUnknownAndRawFilterExpressions(t *testing.T) {
 	if _, err := buildQuery(dryDB(t), &queryFilterRecord{}, map[string]any{"missing": "value"}); err == nil {
 		t.Fatal("unknown model column must be rejected")
@@ -128,6 +166,7 @@ func TestUpsertExactLookupRequiresLiteralIdentity(t *testing.T) {
 	for name, value := range map[string]any{
 		"like operator":  Like("alice"),
 		"or operator":    Or("alice"),
+		"and operator":   And("alice"),
 		"slice":          []string{"alice", "bob"},
 		"raw expression": gorm.Expr("CURRENT_USER"),
 	} {

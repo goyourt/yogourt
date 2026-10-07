@@ -230,6 +230,9 @@ func getOneByExact(db *gorm.DB, obj any, values map[string]any) error {
 		if _, ok := value.(OrOperator); ok {
 			return fmt.Errorf("upsert match column %q requires an exact value", column)
 		}
+		if _, ok := value.(AndOperator); ok {
+			return fmt.Errorf("upsert match column %q requires an exact value", column)
+		}
 		if _, ok := value.(clause.Expression); ok {
 			return fmt.Errorf("upsert match column %q requires a literal value", column)
 		}

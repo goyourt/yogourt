@@ -24,6 +24,14 @@ func Or(value any) OrOperator {
 	return OrOperator{value: value}
 }
 
+type AndOperator struct {
+	value any
+}
+
+func And(value any) AndOperator {
+	return AndOperator{value: value}
+}
+
 // Direction is an allowed SQL ordering direction.
 type Direction uint8
 
