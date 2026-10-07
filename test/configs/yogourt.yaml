@@ -28,4 +28,6 @@ paths:
 
 security:
   secret_key: "${YOGOURT_CONFIG_TEST_SECRET}"
+  token_issuer: "https://auth.test.example"
+  token_audience: "yogourt-test-api"
   token_expires: 1000 # one day

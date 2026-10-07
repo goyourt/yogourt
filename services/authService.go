@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func Authenticate(c *gin.Context, currentUser interfaces.BaseInterface) {
+func Authenticate(c *gin.Context, currentUser interfaces.Resource) {
 	token, err := GetRequestToken(c)
 	if err != nil {
 		// The reason (missing header, malformed header…) stays server-side:
@@ -33,14 +33,14 @@ func Authenticate(c *gin.Context, currentUser interfaces.BaseInterface) {
 		return
 	}
 
-	userUuid, err := GetUUIDClaim(parsedToken, "uuid")
+	subject, err := GetStringClaim(parsedToken, subjectClaim)
 	if err != nil {
 		log.Printf("authentication refused: %v", err)
 		routing.RespondAndAbort(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
-	if err := database.GetOneBy(currentUser, map[string]any{"uuid": userUuid}); err != nil {
+	if err := database.GetOneByIdentity(currentUser, currentUser.PublicIdColumn(), subject); err != nil {
 		respondUserLookupFailure(c, err)
 		return
 	}
@@ -64,7 +64,7 @@ func respondUserLookupFailure(c *gin.Context, err error) {
 	routing.RespondServiceUnavailable(c)
 }
 
-func setCurrentUser(c *gin.Context, currentUser interfaces.BaseInterface) {
+func setCurrentUser(c *gin.Context, currentUser any) {
 	c.Set(providers.ContextCurrentUser, currentUser)
 }
 
@@ -79,20 +79,23 @@ func AttachSubject(c *gin.Context, subject authorization.Subject) {
 // attachAuthorizationSubject derives the authorization subject from the
 // authenticated user and attaches it to the request context. A user model
 // implementing authorization.SubjectResolver controls its own subject;
-// otherwise the subject carries the stable UUID as identity and the internal
-// SQL id as attribute. The current-user mechanism is kept unchanged alongside.
-func attachAuthorizationSubject(c *gin.Context, currentUser interfaces.BaseInterface) {
+// otherwise the subject carries the public id as identity, plus the internal
+// id as attribute when the model can act as an audit actor.
+func attachAuthorizationSubject(c *gin.Context, currentUser interfaces.Resource) {
 	if resolver, ok := currentUser.(authorization.SubjectResolver); ok {
 		AttachSubject(c, resolver.AuthorizationSubject())
 		return
 	}
 
-	uuid := currentUser.GetUuid()
-	if uuid == "" {
+	publicId := currentUser.GetPublicId()
+	if publicId == "" {
 		return
 	}
-	AttachSubject(c, authorization.Subject{
-		ID:         uuid,
-		Attributes: map[string]any{"internal_id": currentUser.GetID()},
-	})
+	subject := authorization.Subject{ID: publicId}
+	if provider, ok := currentUser.(interfaces.AuditActorProvider); ok {
+		if id, ok := provider.AuditActorID(); ok {
+			subject.Attributes = map[string]any{"internal_id": id}
+		}
+	}
+	AttachSubject(c, subject)
 }

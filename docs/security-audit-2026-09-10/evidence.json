@@ -1,0 +1,1560 @@
+{
+  "date": "2026-09-10",
+  "commit": "1464dd4a5e586b31f59f143c1036106da4ef0244",
+  "branch": "feature/v2",
+  "dirty": true,
+  "go_version": "go1.24.0 darwin/arm64",
+  "checks": {
+    "go_test": "passed",
+    "go_test_race": "passed; macOS linker warnings",
+    "go_vet": "passed",
+    "go_mod_verify": "all modules verified",
+    "postgresql_integration": "passed: PostgreSQL 15.16 dedicated temporary cluster, go test -count=1 -race ./authorization/gormstore ./services/database; server stopped",
+    "plugin_integration": "passed: TestPluginRoutesEndToEnd; 5 route plugins compiled and loaded"
+  },
+  "govulncheck_config": {
+    "protocol_version": "v1.0.0",
+    "scanner_name": "govulncheck",
+    "scanner_version": "v1.8.0",
+    "db": "https://vuln.go.dev",
+    "db_last_modified": "2026-09-10T14:48:42Z",
+    "go_version": "go1.24.0",
+    "scan_level": "symbol",
+    "scan_mode": "source"
+  },
+  "advisory_counts": {
+    "package": 28,
+    "symbol": 33,
+    "module": 25
+  },
+  "module_counts": {
+    "stdlib": 31,
+    "github.com/jackc/pgx/v5": 1,
+    "golang.org/x/text": 1
+  },
+  "secret_scan": {
+    "method": "offline signatures: PEM private keys, AWS, GitHub, Slack, Google, Stripe; no entropy scan or credential validation",
+    "current_hits": [],
+    "history_added_line_hits": [],
+    "history_diff_bytes": 1793066,
+    "current_files": 116
+  },
+  "source_manifest": [
+    {
+      "path": ".gitignore",
+      "sha256": "fdc8c1da24da0d17afcbbf9d8d943d4835858403b9a5f69a6ce50172cbff20b7"
+    },
+    {
+      "path": "README.md",
+      "sha256": "5e1b2aa6f592cfbc574e0f8391719889990e2ccf4e4ad69305f410b240a24a43"
+    },
+    {
+      "path": "authorization/audit.go",
+      "sha256": "502152d4414b2de1b11e890cdd0268e445e2b839c07c4304657cfe8eb724a452"
+    },
+    {
+      "path": "authorization/audit_test.go",
+      "sha256": "a6701e459a779e708e43c18be9961ae45465e17af046ece7abc2b6bd54b672f7"
+    },
+    {
+      "path": "authorization/cache.go",
+      "sha256": "0b079d8816485927f7ae99f28e26ccdc0ce1031460fc94762bf5e303a3252e94"
+    },
+    {
+      "path": "authorization/cache_test.go",
+      "sha256": "38ab9ba0ee19cb75534ae815776c91dc3774bf8341bc715b7f895b2a71663fb5"
+    },
+    {
+      "path": "authorization/context.go",
+      "sha256": "6d79cf21bf9c2c03c539ed07314f61712fb62d65f7583930787c2c3cb457da39"
+    },
+    {
+      "path": "authorization/context_test.go",
+      "sha256": "99bf57f3b4e39e5f7a576472242b4fd529a44c2ba2e7beef73de87f54146b0d9"
+    },
+    {
+      "path": "authorization/decision_hook.go",
+      "sha256": "a44054f0b63eb15f41997c1a0bc4df03494a4b5f6ee7551831693de8c6c9bc72"
+    },
+    {
+      "path": "authorization/decision_hook_test.go",
+      "sha256": "61a6d21881447b1aa696b3bebac02e6eeef05d8d9a7d471de0d38ba2248831b3"
+    },
+    {
+      "path": "authorization/engine.go",
+      "sha256": "beb7214d09d3084f77c66589b8e2ed25b7d70dc4a25e7f4bfcf58e54f8d0671d"
+    },
+    {
+      "path": "authorization/engine_test.go",
+      "sha256": "bf1190811c6aa6e33550885c86390ca09078aab580b22f8700ee450723067389"
+    },
+    {
+      "path": "authorization/example_observability_test.go",
+      "sha256": "c0a01e5fabc8b9ca44b93cca015564fd5ef10b5f59c06d702e2fe85ad8ff97b7"
+    },
+    {
+      "path": "authorization/example_test.go",
+      "sha256": "8997ac4e6ec55755459ffaaeac507f098d175f30f7fd880143b3165d1378b9c1"
+    },
+    {
+      "path": "authorization/ginmw/cache_test.go",
+      "sha256": "c32c7917179b5398e9c576191db8f224d16e465bf2d175a18029f8d627f299c3"
+    },
+    {
+      "path": "authorization/ginmw/ginmw.go",
+      "sha256": "70b0716ff84be797de991135ca6348dc73e95b8c2d0d612ced6d3f9e336f3b87"
+    },
+    {
+      "path": "authorization/ginmw/ginmw_test.go",
+      "sha256": "a90dc75237896c30c4b636366f488c3edcd2766417d3486e9cbcc9e001ee36ae"
+    },
+    {
+      "path": "authorization/gormstore/audit_test.go",
+      "sha256": "b5cba1bb3929ec551fa1bec03b1e6c4fba125ff11c72450d8200eacea23bda2d"
+    },
+    {
+      "path": "authorization/gormstore/gormstore.go",
+      "sha256": "b0d6089f653a0e7ca3621d7fd3af29dc7443982a90f00f2b950fd888d202eb0e"
+    },
+    {
+      "path": "authorization/gormstore/gormstore_test.go",
+      "sha256": "2e550c52426ef547ccece3f37a38288aab2f8dbc5106b694c3127da0089542ab"
+    },
+    {
+      "path": "authorization/gormstore/migrate.go",
+      "sha256": "bb8d389a3902d626e5847fd359980d7d0da7d226eaa669a1793e1ef23c137b84"
+    },
+    {
+      "path": "authorization/gormstore/migrations/0001_authz_tables.sql",
+      "sha256": "e3f46a297b0a63c30d4463e090eb7c007a640e788ca6a617e1ec967624d3e8e5"
+    },
+    {
+      "path": "authorization/gormstore/migrations/0002_authz_role_bindings_role_index.sql",
+      "sha256": "e944be3971cd01d0253d66dbab9d9fa4418f0b01cf75240f2d0436253fe9b1b8"
+    },
+    {
+      "path": "authorization/grants_test.go",
+      "sha256": "5f0f71e04cdefc6f845876753644cc98e6a992f57e02570fed07e0e9bcd46171"
+    },
+    {
+      "path": "authorization/internal/runtime/runtime.go",
+      "sha256": "830d1efea4bfe7c677405d7ef9a352bc41535c7515859a6a0dce7a0ed2896c6e"
+    },
+    {
+      "path": "authorization/memory/memory.go",
+      "sha256": "07ab5c9f79cd0340a68d7ac50a76619ad975cf510422c571f876261f9e2b92cb"
+    },
+    {
+      "path": "authorization/memory/memory_test.go",
+      "sha256": "13da623b34bbfe897f81700f1705c1b9cbc4539f076fdaa6d81ec02fff4a11d9"
+    },
+    {
+      "path": "authorization/provider.go",
+      "sha256": "2752f1d9428c9b004a480e59beecbd0b6cd91ea3f348eaed74fce02813941a7b"
+    },
+    {
+      "path": "authorization/publish.go",
+      "sha256": "2499ada386f7fe00ffbfc2e0d4c0261574e755ad1757268611909f8fab118549"
+    },
+    {
+      "path": "authorization/publish_test.go",
+      "sha256": "a089d011281cb9094e3624098b8faa50b1e026d65bc3d197cbdaeef8d0bf8740"
+    },
+    {
+      "path": "authorization/restriction.go",
+      "sha256": "70f8752e4382d550784ba7b9d879e7b787f0a030c4b9a544f3d58c7487f8ea2b"
+    },
+    {
+      "path": "authorization/sync_test.go",
+      "sha256": "dca5f87b481abca464c4979a1c6c134cf4a08d57454011ed3a957e9e388fc8bd"
+    },
+    {
+      "path": "authorization/types.go",
+      "sha256": "d6f9d3acafa637e57533a50b5197eed2f0644965f4614ec61452884ca8fc601d"
+    },
+    {
+      "path": "compiler/compiler.go",
+      "sha256": "72fc5fc4f6630625c2c4533d6def31b81d36e3250f7a9ea761c676253e8131e5"
+    },
+    {
+      "path": "compiler/plugin_loader.go",
+      "sha256": "5ce3872cbc0fbc94078f2fb1c46f5862eca3f47220fac26a159173669b09cd49"
+    },
+    {
+      "path": "compiler/plugin_loader_test.go",
+      "sha256": "e99352e9e8c059bf86b7159cf81073f4ebf5be64cbe137498fac5b3633ec981c"
+    },
+    {
+      "path": "compiler/plugin_path_test.go",
+      "sha256": "cd05688b7b65b512e535abeb322ba869a497f8537f013e25df215e185589f412"
+    },
+    {
+      "path": "compiler/route_formatter.go",
+      "sha256": "d23693266616b9ce1bbea79cebb2e3919d899aa281bc360a508223a7c1757a03"
+    },
+    {
+      "path": "compiler/route_formatter_test.go",
+      "sha256": "b9a4e60dcaa382eaaaa658fc7291eb95482a9bb6c443863d4fcc53940fd333da"
+    },
+    {
+      "path": "context.go",
+      "sha256": "81300adc7767c8a7702cc7ac1bb7b28917ed4fc8eedf3abff4b423be58743c52"
+    },
+    {
+      "path": "core/authorize.go",
+      "sha256": "59e897608c433d8ea382e6349b7b488a5de1c740d7afe8e11b211efb51b167a1"
+    },
+    {
+      "path": "core/authorize_test.go",
+      "sha256": "2f5897b4cd8c3c206a128c44c57108ecb6ca529d864f776b2af3b40ade957fa7"
+    },
+    {
+      "path": "core/context.go",
+      "sha256": "deb6d4cf9322dca19033bf6d76b01fe4258f53b85f915875b6285ef8ddd51b61"
+    },
+    {
+      "path": "dairy/array.go",
+      "sha256": "d37624217d3c9c50eb8a2a72ec147bd9cd05470119daa81462a8e4fc675234f4"
+    },
+    {
+      "path": "dairy/strings.go",
+      "sha256": "85678cd68cfbf5490a98bb296cb636a0f5349e3c16da98f29f3246bc8b3011a6"
+    },
+    {
+      "path": "docs/authorization.md",
+      "sha256": "e8d22b1e5625f3ba8c8af7c379bc77cfbaa793375b90c03462f58b2c7b407c9a"
+    },
+    {
+      "path": "docs/configuration.md",
+      "sha256": "e17c516e7218899fe2bcf0bcedf7acdf0c9d7d335a41ad98264247472946a98f"
+    },
+    {
+      "path": "docs/migration-v2.md",
+      "sha256": "210706e126e4685efcfa98a0b58598a3b77e50d6b56af09759e97c369de02fb0"
+    },
+    {
+      "path": "docs/routing.md",
+      "sha256": "4e5f3899788d14dc7fa8cbeb51598bb79b6dc2764577f74da83a4f4fb1bc2f07"
+    },
+    {
+      "path": "docs/services.md",
+      "sha256": "4d33bcb8c8b7d78d85442e97bac3c7123d595516549026ccb26c6611fe041935"
+    },
+    {
+      "path": "go.mod",
+      "sha256": "347eeac16e996fdd8b574dadc2ef8da2e6e30c03d256b491cf2b46f325324ddf"
+    },
+    {
+      "path": "go.sum",
+      "sha256": "f648a7fa16c7b6d828ff58b12a129c2c07e62582bb1ceb4509e26e4653981daf"
+    },
+    {
+      "path": "interfaces/FileInterface.go",
+      "sha256": "7623661977473d03ea05bd88ecfe48d0f18d3c993e3780865e886c1d5c3d536f"
+    },
+    {
+      "path": "interfaces/bricks.go",
+      "sha256": "bdb101bef1a40a8bd45599529ceab937908cb6d21d9697b4fc73a5f83dda5e70"
+    },
+    {
+      "path": "interfaces/resource.go",
+      "sha256": "2c42922c08b899aef070839b74b7f0b5d6b79c1dbec05c50aaaa8eb14ac9f2c2"
+    },
+    {
+      "path": "middleware/middleware.go",
+      "sha256": "8066f08b1f7048c2ca268b1514d10cced160de99f1881b7bad69a6a46cb30d7e"
+    },
+    {
+      "path": "migrations/v1_to_v2.sql",
+      "sha256": "2081d5308cb3177ee43326005db0e896a0e39dfff2482a257e84fcd62e8d17b7"
+    },
+    {
+      "path": "routing/derivation_test.go",
+      "sha256": "a7faf1a561aec29dccf4074172d720f68bbd2153d8198a9a15fc67b600eb23fe"
+    },
+    {
+      "path": "routing/gin_mode_test.go",
+      "sha256": "1ac186c263dd0d235ff21a887cb50e0cd00a919b255861307b6ea1248b70c3bd"
+    },
+    {
+      "path": "routing/handlersServices.go",
+      "sha256": "0e66bd6ca533d6d60d87b981aac0727addcc9b54ebb4dbff7c90bbc1289aca72"
+    },
+    {
+      "path": "routing/handlersServices_test.go",
+      "sha256": "bd487efb2aa0a6296d625d588bc43a969b56f11223fa30001ac37a7761ccbd96"
+    },
+    {
+      "path": "routing/loader.go",
+      "sha256": "e7bb78f88db97db0b961d7377fa992a7bcb36fe8d7c2b1aae09adfcba73c061b"
+    },
+    {
+      "path": "routing/loader_chain_test.go",
+      "sha256": "9edc59c1316dbef06eb63d5a73ebfbcda29169f5e0f298813f6a45f14bd2bd5b"
+    },
+    {
+      "path": "routing/permissions.go",
+      "sha256": "c0949e831e04fdef759d596756092373d1f2b5d0008309f0321084219ef9da22"
+    },
+    {
+      "path": "routing/permissions_test.go",
+      "sha256": "75f087f3aaa0572924509dd51b3b871670d4108511ca4291cd953b58974e3317"
+    },
+    {
+      "path": "routing/plugin_integration_norace_test.go",
+      "sha256": "835301fc43531c547b1ccc8ab13abfe145a556f4d8abbb1af0f43ed4d537cd1f"
+    },
+    {
+      "path": "routing/plugin_integration_race_test.go",
+      "sha256": "a9db043b776d6d5f1adcadf7cc4b591219ea5a78490080d49b26e195fa78af38"
+    },
+    {
+      "path": "routing/plugin_integration_test.go",
+      "sha256": "7f96efe1c3049bb20b3e105a67bf5973644b29e1fb64be007af5b99f06893c78"
+    },
+    {
+      "path": "routing/routing.go",
+      "sha256": "1717d53179c2da74e386121c55fd74b62059f091e40f6629b36df17b62fbb0d8"
+    },
+    {
+      "path": "routing/routing_test.go",
+      "sha256": "aad4ab2943b6bd26e6b4a3abbb0889a581e732d29d777f3970689b3ce1a92e4b"
+    },
+    {
+      "path": "routing/scanner.go",
+      "sha256": "76c37dd1a295bd3c2868e00c9d89891d1e67726318d7f53a4180672322373f37"
+    },
+    {
+      "path": "routing/scanner_test.go",
+      "sha256": "b74b9b6d0fdd520ef90aa5d400ce51c1587533e347b14a9c29fe0f54facf1efb"
+    },
+    {
+      "path": "routing/surface_test.go",
+      "sha256": "fe974e312fb309a4e45c28844e6f1c05d355ba00f147a383760bcb7a8c417f6b"
+    },
+    {
+      "path": "routing/testdata/pluginapi/README.md",
+      "sha256": "3581fcadf4dbf7c5e53dccb2819efed185064f0fa9a21cb9e5694a8562f955be"
+    },
+    {
+      "path": "routing/testdata/pluginapi/orphan/index.go",
+      "sha256": "667da81b5b47e4444e7cde11d4b4b91dd17746c12665c3245db64cb2ebf29f75"
+    },
+    {
+      "path": "routing/testdata/pluginapi/public/index.go",
+      "sha256": "34a61188e76f0cd9b439e29942cf088e8df3f97c95f3fd77109fee69800a7b5f"
+    },
+    {
+      "path": "routing/testdata/pluginapi/widgets/create.go",
+      "sha256": "6979a18c09c0d1c7b65c8d30da23ae53ba7f88aebcf213791015ffac2f64ced0"
+    },
+    {
+      "path": "routing/testdata/pluginapi/widgets/id_/routes.go",
+      "sha256": "4e69f81aa3a99a01ec771525cf2eac04c1960e16e0c912f879fac60b5944c905"
+    },
+    {
+      "path": "routing/testdata/pluginapi/widgets/list.go",
+      "sha256": "e8551f0b509c5a3c87a2a54d1597b9478186ec8cf42f9711c6c8d42a435123bd"
+    },
+    {
+      "path": "services/authService.go",
+      "sha256": "e25d746785f1aa5f335e7345402e63a8235565c90725960cb1d1395a238e3fe2"
+    },
+    {
+      "path": "services/authService_test.go",
+      "sha256": "2c6ddf3c13d029582c6c22b3db67f847aa448cfdbffb4fecd25875076262f954"
+    },
+    {
+      "path": "services/database/guards.go",
+      "sha256": "550a125ff2ecc2ed0fcce5de0862ec2c6e2824e9618d6450eb5fc0dcdce9df44"
+    },
+    {
+      "path": "services/database/guards_test.go",
+      "sha256": "32d3f3604e2257db00dfcb3643e8e01b229b051bce447c55f0b01c434c4b60f0"
+    },
+    {
+      "path": "services/database/queries.go",
+      "sha256": "f0948e20cb3758d597f7f047eb9ffa3fc877871cbc11b7cc237bd01af8753039"
+    },
+    {
+      "path": "services/database/queries_delete_test.go",
+      "sha256": "d86fc7b29f36124fce12902b38ab0913f76677d4918b21746c2344e609e29d6e"
+    },
+    {
+      "path": "services/database/queries_v2_test.go",
+      "sha256": "2226902eb38024a2a551c6928cc6203e233eeaafb3d2ea8eb70524fe35e20a72"
+    },
+    {
+      "path": "services/database/queryFunctions.go",
+      "sha256": "9d012b601982e86bf571e84e2f400fa7e38b89e0646077b4708687e721cf6e2d"
+    },
+    {
+      "path": "services/database/relations.go",
+      "sha256": "0ce1c78ff1d22ac24cf78bb48115f27902361619566bf6859a2457ecd663f752"
+    },
+    {
+      "path": "services/database/relations_guard_test.go",
+      "sha256": "252d4ed7a9963a3bf74080714ca471bccc6e39cc54de0cb7213eeacfa8bf2c51"
+    },
+    {
+      "path": "services/fileService.go",
+      "sha256": "20325732b9820351ad7fbba6a6e67acbf88d3d72e0fd2cd16ed2cdf0ad530b24"
+    },
+    {
+      "path": "services/httpService.go",
+      "sha256": "384ec426ee165ef4329eb5383048e50d7aeb6e44e91c30b932059e706efbb6c7"
+    },
+    {
+      "path": "services/httpService_test.go",
+      "sha256": "a7aaa038cb41722fb909b05386a851d7da5cc1d03a3c17f37155664511de25f7"
+    },
+    {
+      "path": "services/passwordService.go",
+      "sha256": "22d75f81001c3da32f85e85f00e69294054c682fc8089eddb16775833ec6b1ab"
+    },
+    {
+      "path": "services/providers/configKeys.go",
+      "sha256": "0566e1f4f58114ba799a984602021235294638a38749010eb81894eb4dd9fe1e"
+    },
+    {
+      "path": "services/providers/configKeys_test.go",
+      "sha256": "dd644b458e5b7faea306f9215e68318226bb078c18890b509465cc51c08ca0dc"
+    },
+    {
+      "path": "services/providers/currentUserProvider.go",
+      "sha256": "2f1cfc9ac466e6ae38109285e53824bba07c5ce7fc0224106e31e52b2ece80b4"
+    },
+    {
+      "path": "services/providers/databaseDSN_test.go",
+      "sha256": "beadd1c688002d7e6cd165d63cf9e9c2d986d1e828372e536b66b75a3d6a8f80"
+    },
+    {
+      "path": "services/providers/databaseProvider.go",
+      "sha256": "c53b91fb6b8c99b20f2c0953f340d3a546adf453e4098cdcb28fdd22c3b6c9c0"
+    },
+    {
+      "path": "services/providers/databaseType_test.go",
+      "sha256": "7f30c7729034d7b1a2a7b72c128a3c1996a12d86c2beefb5fd1f655d1395415d"
+    },
+    {
+      "path": "services/providers/duration_test.go",
+      "sha256": "e54d9e3a9bc0ee5f2ae6f889426c6c6e78fded8a9676cdbf2ffb9d0e600ca9df"
+    },
+    {
+      "path": "services/providers/fileConfigProvider.go",
+      "sha256": "b87af219eeb4ce354dac7774b7ecce18f681e86dbb7cbf6e3dafcba958d435a2"
+    },
+    {
+      "path": "services/providers/mainConfigProvider.go",
+      "sha256": "47a134a297241cb43587a8e451b5b57865891b9475287cc062b793e5ee3dab7a"
+    },
+    {
+      "path": "services/tokenService.go",
+      "sha256": "8455c2b1a5dd38bb6bd9b81d797bde3acf836933543085173a849d98938b4319"
+    },
+    {
+      "path": "test/TestFilesToCompile/FileToCompile.go",
+      "sha256": "7cbffd243ce4f0c174a1af3c97cf8cee613f27b9998b44afb39bc8d4aa25285b"
+    },
+    {
+      "path": "test/cacheProvider_test.go",
+      "sha256": "e79416de2321ed47adcbd2bb2e67e5b22d74d5e406112614960f2dd3bb89ce95"
+    },
+    {
+      "path": "test/compiler_test.go",
+      "sha256": "94ddd00f744e08ba1cd75957fbd382eeafcca4c99425e9ab5d27d3b2698db685"
+    },
+    {
+      "path": "test/configReader_test.go",
+      "sha256": "3b633589bc14676bdef3f70c40646d4ba57cbcb20cd63b8ef422fbda5048b970"
+    },
+    {
+      "path": "test/configs/files.yaml",
+      "sha256": "94d546333f1d6ddf3afa82e0fb7edb49f61047b0d49a6edddbfde2b0f60ccb78"
+    },
+    {
+      "path": "test/configs/yogourt.env",
+      "sha256": "d6b8fdafc7b7ab3644d4e78586cf0e53a6bf68ab6c7c31187834f5507ca43429"
+    },
+    {
+      "path": "test/configs/yogourt.yaml",
+      "sha256": "efe95976d07f2dd12d46381ef989b5b9ef7703b85fd79af3a4590ddd438fcacb"
+    },
+    {
+      "path": "test/currentUserProvider_test.go",
+      "sha256": "24c879768306679267c9b374f8363f5097a883b835b245b54babd97b3ddd74bb"
+    },
+    {
+      "path": "test/databaseProvider_test.go",
+      "sha256": "4eea998d8b4bd2cc00fd54ad248880558c293c1d56a94f32dab544249bfac192"
+    },
+    {
+      "path": "test/middleware_test.go",
+      "sha256": "9be4e2ac9096940128bee7ae8ad50be64e1e4613e28d972166c9e40631bf48fe"
+    },
+    {
+      "path": "test/passwordService_test.go",
+      "sha256": "2748b81da6f26d56111700cf76167f5ee093099e0fb8e352fc2cfcc42977693a"
+    },
+    {
+      "path": "test/pluginLoaderSymbol_test.go",
+      "sha256": "44e1225ee184d6e2f7476a1e590a0e29c1bcedc7848509f988933609238966ea"
+    },
+    {
+      "path": "test/tokenService_test.go",
+      "sha256": "06f1b32d392ca918ca5a6f143d89474840bcec4ac98983951db19f08ee236483"
+    }
+  ],
+  "advisories": [
+    {
+      "id": "GO-2025-3503",
+      "level": "package",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.1",
+      "summary": "HTTP Proxy bypass using IPv6 Zone IDs in golang.org/x/net",
+      "aliases": [
+        "CVE-2025-22870",
+        "GHSA-qxp5-gwg8-xv66"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2025-3503"
+    },
+    {
+      "id": "GO-2025-3563",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.2",
+      "summary": "Request smuggling due to acceptance of invalid chunked data in net/http",
+      "aliases": [
+        "CVE-2025-22871"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2025-3563"
+    },
+    {
+      "id": "GO-2025-3749",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.4",
+      "summary": "Usage of ExtKeyUsageAny disables policy validation in crypto/x509",
+      "aliases": [
+        "CVE-2025-22874"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2025-3749"
+    },
+    {
+      "id": "GO-2025-3750",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.4",
+      "summary": "Inconsistent handling of O_CREATE|O_EXCL on Unix and Windows in os in syscall",
+      "aliases": [
+        "CVE-2025-0913"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2025-3750"
+    },
+    {
+      "id": "GO-2025-3751",
+      "level": "package",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.4",
+      "summary": "Sensitive headers not cleared on cross-origin redirect in net/http",
+      "aliases": [
+        "CVE-2025-4673"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2025-3751"
+    },
+    {
+      "id": "GO-2025-3849",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.6",
+      "summary": "Incorrect results returned from Rows.Scan in database/sql",
+      "aliases": [
+        "CVE-2025-47907"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2025-3849"
+    },
+    {
+      "id": "GO-2025-3956",
+      "level": "package",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.6",
+      "summary": "Unexpected paths returned from LookPath in os/exec",
+      "aliases": [
+        "CVE-2025-47906"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2025-3956"
+    },
+    {
+      "id": "GO-2025-4006",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.8",
+      "summary": "Excessive CPU consumption in ParseAddress in net/mail",
+      "aliases": [
+        "CVE-2025-61725"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2025-4006"
+    },
+    {
+      "id": "GO-2025-4007",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.9",
+      "summary": "Quadratic complexity when checking name constraints in crypto/x509",
+      "aliases": [
+        "CVE-2025-58187"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2025-4007"
+    },
+    {
+      "id": "GO-2025-4008",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.8",
+      "summary": "ALPN negotiation error contains attacker controlled information in crypto/tls",
+      "aliases": [
+        "CVE-2025-58189"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2025-4008"
+    },
+    {
+      "id": "GO-2025-4009",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.8",
+      "summary": "Quadratic complexity when parsing some invalid inputs in encoding/pem",
+      "aliases": [
+        "CVE-2025-61723"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2025-4009"
+    },
+    {
+      "id": "GO-2025-4010",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.8",
+      "summary": "Insufficient validation of bracketed IPv6 hostnames in net/url",
+      "aliases": [
+        "CVE-2025-47912"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2025-4010"
+    },
+    {
+      "id": "GO-2025-4011",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.8",
+      "summary": "Parsing DER payload can cause memory exhaustion in encoding/asn1",
+      "aliases": [
+        "CVE-2025-58185"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2025-4011"
+    },
+    {
+      "id": "GO-2025-4012",
+      "level": "package",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.8",
+      "summary": "Lack of limit when parsing cookies can cause memory exhaustion in net/http",
+      "aliases": [
+        "CVE-2025-58186"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2025-4012"
+    },
+    {
+      "id": "GO-2025-4013",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.8",
+      "summary": "Panic when validating certificates with DSA public keys in crypto/x509",
+      "aliases": [
+        "CVE-2025-58188"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2025-4013"
+    },
+    {
+      "id": "GO-2025-4014",
+      "level": "module",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.8",
+      "summary": "Unbounded allocation when parsing GNU sparse map in archive/tar",
+      "aliases": [
+        "CVE-2025-58183"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2025-4014"
+    },
+    {
+      "id": "GO-2025-4015",
+      "level": "package",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.8",
+      "summary": "Excessive CPU consumption in Reader.ReadResponse in net/textproto",
+      "aliases": [
+        "CVE-2025-61724"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2025-4015"
+    },
+    {
+      "id": "GO-2025-4116",
+      "level": "module",
+      "module": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "fixed_version": "v0.43.0",
+      "summary": "Potential denial of service in golang.org/x/crypto/ssh/agent",
+      "aliases": [
+        "CVE-2025-47913"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2025-4116"
+    },
+    {
+      "id": "GO-2025-4134",
+      "level": "module",
+      "module": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "fixed_version": "v0.45.0",
+      "summary": "Unbounded memory consumption in golang.org/x/crypto/ssh",
+      "aliases": [
+        "CVE-2025-58181",
+        "GHSA-j5w8-q4qc-rx2x"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2025-4134"
+    },
+    {
+      "id": "GO-2025-4135",
+      "level": "module",
+      "module": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "fixed_version": "v0.45.0",
+      "summary": "Malformed constraint may cause denial of service in golang.org/x/crypto/ssh/agent",
+      "aliases": [
+        "CVE-2025-47914",
+        "GHSA-f6x5-jh6r-wrfv"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2025-4135"
+    },
+    {
+      "id": "GO-2025-4155",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.11",
+      "summary": "Excessive resource consumption when printing error string for host certificate validation in crypto/x509",
+      "aliases": [
+        "CVE-2025-61729"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2025-4155"
+    },
+    {
+      "id": "GO-2025-4175",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.11",
+      "summary": "Improper application of excluded DNS name constraints when verifying wildcard names in crypto/x509",
+      "aliases": [
+        "CVE-2025-61727"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2025-4175"
+    },
+    {
+      "id": "GO-2026-4337",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.13",
+      "summary": "Unexpected session resumption in crypto/tls",
+      "aliases": [
+        "CVE-2025-68121"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4337"
+    },
+    {
+      "id": "GO-2026-4340",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.12",
+      "summary": "Handshake messages may be processed at the incorrect encryption level in crypto/tls",
+      "aliases": [
+        "CVE-2025-61730"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4340"
+    },
+    {
+      "id": "GO-2026-4341",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.12",
+      "summary": "Memory exhaustion in query parameter parsing in net/url",
+      "aliases": [
+        "CVE-2025-61726"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4341"
+    },
+    {
+      "id": "GO-2026-4342",
+      "level": "module",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.12",
+      "summary": "Excessive CPU consumption when building archive index in archive/zip",
+      "aliases": [
+        "CVE-2025-61728"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4342"
+    },
+    {
+      "id": "GO-2026-4403",
+      "level": "package",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.24.3",
+      "summary": "Improper access to parent directory of root in os",
+      "aliases": [
+        "CVE-2025-22873"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4403"
+    },
+    {
+      "id": "GO-2026-4440",
+      "level": "package",
+      "module": "golang.org/x/net",
+      "version": "v0.41.0",
+      "fixed_version": "v0.45.0",
+      "summary": "Quadratic parsing complexity in golang.org/x/net/html",
+      "aliases": [
+        "CVE-2025-47911"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4440"
+    },
+    {
+      "id": "GO-2026-4441",
+      "level": "package",
+      "module": "golang.org/x/net",
+      "version": "v0.41.0",
+      "fixed_version": "v0.45.0",
+      "summary": "Infinite parsing loop in golang.org/x/net",
+      "aliases": [
+        "CVE-2025-58190"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4441"
+    },
+    {
+      "id": "GO-2026-4601",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.8",
+      "summary": "Incorrect parsing of IPv6 host literals in net/url",
+      "aliases": [
+        "CVE-2026-25679"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4601"
+    },
+    {
+      "id": "GO-2026-4602",
+      "level": "package",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.8",
+      "summary": "FileInfo can escape from a Root in os",
+      "aliases": [
+        "CVE-2026-27139"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4602"
+    },
+    {
+      "id": "GO-2026-4603",
+      "level": "package",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.8",
+      "summary": "URLs in meta content attribute actions are not escaped in html/template",
+      "aliases": [
+        "CVE-2026-27142"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4603"
+    },
+    {
+      "id": "GO-2026-4771",
+      "level": "package",
+      "module": "github.com/jackc/pgx/v5",
+      "version": "v5.6.0",
+      "fixed_version": "v5.9.0",
+      "summary": "CVE-2026-33815 in github.com/jackc/pgx",
+      "aliases": [
+        "CVE-2026-33815",
+        "GHSA-xgrm-4fwx-7qm8"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4771"
+    },
+    {
+      "id": "GO-2026-4772",
+      "level": "package",
+      "module": "github.com/jackc/pgx/v5",
+      "version": "v5.6.0",
+      "fixed_version": "v5.9.0",
+      "summary": "CVE-2026-33816 in github.com/jackc/pgx",
+      "aliases": [
+        "CVE-2026-33816",
+        "GHSA-9jj7-4m8r-rfcm"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4772"
+    },
+    {
+      "id": "GO-2026-4864",
+      "level": "package",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.9",
+      "summary": "TOCTOU permits root escape on Linux via Root.Chmod in os in internal/syscall/unix",
+      "aliases": [
+        "CVE-2026-32282"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4864"
+    },
+    {
+      "id": "GO-2026-4865",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.9",
+      "summary": "JsBraceDepth Context Tracking Bugs (XSS) in html/template",
+      "aliases": [
+        "CVE-2026-32289"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4865"
+    },
+    {
+      "id": "GO-2026-4869",
+      "level": "module",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.9",
+      "summary": "Unbounded allocation for old GNU sparse in archive/tar",
+      "aliases": [
+        "CVE-2026-32288"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4869"
+    },
+    {
+      "id": "GO-2026-4870",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.9",
+      "summary": "Unauthenticated TLS 1.3 KeyUpdate record can cause persistent connection retention and DoS in crypto/tls",
+      "aliases": [
+        "CVE-2026-32283"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4870"
+    },
+    {
+      "id": "GO-2026-4918",
+      "level": "package",
+      "module": "golang.org/x/net",
+      "version": "v0.41.0",
+      "fixed_version": "v0.53.0",
+      "summary": "Infinite loop in HTTP/2 transport when given bad SETTINGS_MAX_FRAME_SIZE in net/http/internal/http2 in golang.org/x/net",
+      "aliases": [
+        "CVE-2026-33814"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4918"
+    },
+    {
+      "id": "GO-2026-4946",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.9",
+      "summary": "Inefficient policy validation in crypto/x509",
+      "aliases": [
+        "CVE-2026-32281"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4946"
+    },
+    {
+      "id": "GO-2026-4947",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.9",
+      "summary": "Unexpected work during chain building in crypto/x509",
+      "aliases": [
+        "CVE-2026-32280"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4947"
+    },
+    {
+      "id": "GO-2026-4970",
+      "level": "package",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.12",
+      "summary": "Root escape via symlink plus trailing slash in os",
+      "aliases": [
+        "CVE-2026-39822"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4970"
+    },
+    {
+      "id": "GO-2026-4971",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.10",
+      "summary": "Panic in Dial and LookupPort when handling NUL byte on Windows in net",
+      "aliases": [
+        "CVE-2026-39836"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4971"
+    },
+    {
+      "id": "GO-2026-4976",
+      "level": "package",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.10",
+      "summary": "ReverseProxy forwards queries with more than urlmaxqueryparams parameters in net/http/httputil",
+      "aliases": [
+        "CVE-2026-39825"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4976"
+    },
+    {
+      "id": "GO-2026-4977",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.10",
+      "summary": "Quadratic string concatenation in consumePhrase in net/mail",
+      "aliases": [
+        "CVE-2026-42499"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4977"
+    },
+    {
+      "id": "GO-2026-4980",
+      "level": "package",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.10",
+      "summary": "Escaper bypass leads to XSS in html/template",
+      "aliases": [
+        "CVE-2026-39826"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4980"
+    },
+    {
+      "id": "GO-2026-4981",
+      "level": "package",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.10",
+      "summary": "Crash when handling long CNAME response in net",
+      "aliases": [
+        "CVE-2026-33811"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4981"
+    },
+    {
+      "id": "GO-2026-4982",
+      "level": "package",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.10",
+      "summary": "Bypass of meta content URL escaping causes XSS in html/template",
+      "aliases": [
+        "CVE-2026-39823"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4982"
+    },
+    {
+      "id": "GO-2026-4986",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.10",
+      "summary": "Quadratic string concatentation in consumeComment in net/mail",
+      "aliases": [
+        "CVE-2026-39820"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-4986"
+    },
+    {
+      "id": "GO-2026-5004",
+      "level": "symbol",
+      "module": "github.com/jackc/pgx/v5",
+      "version": "v5.6.0",
+      "fixed_version": "v5.9.2",
+      "summary": "SQL Injection via placeholder confusion with dollar quoted string literals in github.com/jackc/pgx",
+      "aliases": [
+        "CVE-2026-41889",
+        "GHSA-j88v-2chj-qfwx"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5004"
+    },
+    {
+      "id": "GO-2026-5005",
+      "level": "module",
+      "module": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "fixed_version": "v0.52.0",
+      "summary": "Invoking key constraints not enforced in golang.org/x/crypto/ssh/agent",
+      "aliases": [
+        "CVE-2026-39833",
+        "GHSA-jppx-rxg9-jmrx"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5005"
+    },
+    {
+      "id": "GO-2026-5006",
+      "level": "module",
+      "module": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "fixed_version": "v0.52.0",
+      "summary": "Invoking agent constraints dropped when forwarding keys in golang.org/x/crypto/ssh/agent",
+      "aliases": [
+        "CVE-2026-39832",
+        "GHSA-f5wc-c3c7-36mc"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5006"
+    },
+    {
+      "id": "GO-2026-5013",
+      "level": "module",
+      "module": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "fixed_version": "v0.52.0",
+      "summary": "Invoking byte arithmetic causes underflow and panic in golang.org/x/crypto/ssh",
+      "aliases": [
+        "CVE-2026-46597"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5013"
+    },
+    {
+      "id": "GO-2026-5014",
+      "level": "module",
+      "module": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "fixed_version": "v0.52.0",
+      "summary": "Invoking bypass of certificate restrictions in golang.org/x/crypto/ssh",
+      "aliases": [
+        "CVE-2026-39828"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5014"
+    },
+    {
+      "id": "GO-2026-5015",
+      "level": "module",
+      "module": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "fixed_version": "v0.52.0",
+      "summary": "Invoking server panic during CheckHostKey/Authenticate in golang.org/x/crypto/ssh",
+      "aliases": [
+        "CVE-2026-39835"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5015"
+    },
+    {
+      "id": "GO-2026-5016",
+      "level": "module",
+      "module": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "fixed_version": "v0.52.0",
+      "summary": "Invoking memory leak when rejecting channels can lead to DoS in golang.org/x/crypto/ssh",
+      "aliases": [
+        "CVE-2026-39827"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5016"
+    },
+    {
+      "id": "GO-2026-5017",
+      "level": "module",
+      "module": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "fixed_version": "v0.52.0",
+      "summary": "Invoking client can cause server deadlock on unexpected responses in golang.org/x/crypto/ssh",
+      "aliases": [
+        "CVE-2026-39830"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5017"
+    },
+    {
+      "id": "GO-2026-5018",
+      "level": "module",
+      "module": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "fixed_version": "v0.52.0",
+      "summary": "Invoking pathological RSA/DSA parameters may cause DoS in golang.org/x/crypto/ssh",
+      "aliases": [
+        "CVE-2026-39829"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5018"
+    },
+    {
+      "id": "GO-2026-5019",
+      "level": "module",
+      "module": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "fixed_version": "v0.52.0",
+      "summary": "Invoking bypass of FIDO/U2F security keys physical interaction in golang.org/x/crypto/ssh",
+      "aliases": [
+        "CVE-2026-39831"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5019"
+    },
+    {
+      "id": "GO-2026-5020",
+      "level": "module",
+      "module": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "fixed_version": "v0.52.0",
+      "summary": "Invoking infinite loop on large channel writes in golang.org/x/crypto/ssh",
+      "aliases": [
+        "CVE-2026-39834"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5020"
+    },
+    {
+      "id": "GO-2026-5021",
+      "level": "module",
+      "module": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "fixed_version": "v0.52.0",
+      "summary": "Invoking auth bypass via unenforced @revoked status in golang.org/x/crypto/ssh/knownhosts",
+      "aliases": [
+        "CVE-2026-42508",
+        "GHSA-5cgq-3rg8-m6cv"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5021"
+    },
+    {
+      "id": "GO-2026-5023",
+      "level": "module",
+      "module": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "fixed_version": "v0.52.0",
+      "summary": "Invoking VerifiedPublicKeyCallback permissions skip enforcement in golang.org/x/crypto/ssh",
+      "aliases": [
+        "CVE-2026-46595"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5023"
+    },
+    {
+      "id": "GO-2026-5024",
+      "level": "module",
+      "module": "golang.org/x/sys",
+      "version": "v0.33.0",
+      "fixed_version": "v0.44.0",
+      "summary": "Invoking integer overflow in NewNTUnicodeString in golang.org/x/sys/windows",
+      "aliases": [
+        "CVE-2026-39824"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5024"
+    },
+    {
+      "id": "GO-2026-5025",
+      "level": "package",
+      "module": "golang.org/x/net",
+      "version": "v0.41.0",
+      "fixed_version": "v0.55.0",
+      "summary": "Invoking incorrect handling of namespaced elements in foreign content in golang.org/x/net/html",
+      "aliases": [
+        "CVE-2026-42506"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5025"
+    },
+    {
+      "id": "GO-2026-5026",
+      "level": "package",
+      "module": "golang.org/x/net",
+      "version": "v0.41.0",
+      "fixed_version": "v0.55.0",
+      "summary": "Invoking failure to reject ASCII-only Punycode-encoded labels in golang.org/x/net/idna",
+      "aliases": [
+        "CVE-2026-39821"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5026"
+    },
+    {
+      "id": "GO-2026-5027",
+      "level": "package",
+      "module": "golang.org/x/net",
+      "version": "v0.41.0",
+      "fixed_version": "v0.55.0",
+      "summary": "Invoking incorrect handling of HTML elements in foreign content in golang.org/x/net/html",
+      "aliases": [
+        "CVE-2026-42502"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5027"
+    },
+    {
+      "id": "GO-2026-5028",
+      "level": "package",
+      "module": "golang.org/x/net",
+      "version": "v0.41.0",
+      "fixed_version": "v0.55.0",
+      "summary": "Invoking denial of service when parsing arbitrary HTML in golang.org/x/net/html",
+      "aliases": [
+        "CVE-2026-25680"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5028"
+    },
+    {
+      "id": "GO-2026-5029",
+      "level": "package",
+      "module": "golang.org/x/net",
+      "version": "v0.41.0",
+      "fixed_version": "v0.55.0",
+      "summary": "Invoking incorrect handling of character references in DOCTYPE nodes in golang.org/x/net/html",
+      "aliases": [
+        "CVE-2026-25681"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5029"
+    },
+    {
+      "id": "GO-2026-5030",
+      "level": "package",
+      "module": "golang.org/x/net",
+      "version": "v0.41.0",
+      "fixed_version": "v0.55.0",
+      "summary": "Invoking duplicate attributes can cause XSS in golang.org/x/net/html",
+      "aliases": [
+        "CVE-2026-27136"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5030"
+    },
+    {
+      "id": "GO-2026-5033",
+      "level": "module",
+      "module": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "fixed_version": "v0.52.0",
+      "summary": "Invoking pathological inputs can lead to client panic in golang.org/x/crypto/ssh/agent",
+      "aliases": [
+        "CVE-2026-46598"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5033"
+    },
+    {
+      "id": "GO-2026-5037",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.11",
+      "summary": "Inefficient candidate hostname parsing in crypto/x509",
+      "aliases": [
+        "CVE-2026-27145"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5037"
+    },
+    {
+      "id": "GO-2026-5038",
+      "level": "package",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.11",
+      "summary": "Quadratic complexity in WordDecoder.DecodeHeader in mime",
+      "aliases": [
+        "CVE-2026-42504"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5038"
+    },
+    {
+      "id": "GO-2026-5039",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.11",
+      "summary": "Arbitrary inputs are included in errors without any escaping in net/textproto",
+      "aliases": [
+        "CVE-2026-42507"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5039"
+    },
+    {
+      "id": "GO-2026-5856",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.12",
+      "summary": "Invoking Encrypted Client Hello privacy leak in crypto/tls",
+      "aliases": [
+        "CVE-2026-42505"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5856"
+    },
+    {
+      "id": "GO-2026-5932",
+      "level": "module",
+      "module": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "fixed_version": null,
+      "summary": "The golang.org/x/crypto/openpgp package is unmaintained, unsafe by design, and has known security issues",
+      "aliases": [],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5932"
+    },
+    {
+      "id": "GO-2026-5942",
+      "level": "module",
+      "module": "golang.org/x/net",
+      "version": "v0.41.0",
+      "fixed_version": "v0.56.0",
+      "summary": "Parsing an invalid SVCB or HTTPS RR can panic in golang.org/x/net/dns/dnsmessage",
+      "aliases": [
+        "CVE-2026-46600"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5942"
+    },
+    {
+      "id": "GO-2026-5970",
+      "level": "symbol",
+      "module": "golang.org/x/text",
+      "version": "v0.26.0",
+      "fixed_version": "v0.39.0",
+      "summary": "Infinite loop on invalid input in golang.org/x/text",
+      "aliases": [
+        "CVE-2026-56852"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5970"
+    },
+    {
+      "id": "GO-2026-5972",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.13",
+      "summary": "Enforce maximum recursion depth in encoding/asn1",
+      "aliases": [
+        "CVE-2026-33818"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-5972"
+    },
+    {
+      "id": "GO-2026-6088",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.13",
+      "summary": "Add recursion depth guard during decode in encoding/xml",
+      "aliases": [
+        "CVE-2026-56859"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-6088"
+    },
+    {
+      "id": "GO-2026-6089",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.13",
+      "summary": "Apply ReadHeaderTimeout when doing unencrypted HTTP/2 check in net/http",
+      "aliases": [
+        "CVE-2026-56853"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-6089"
+    },
+    {
+      "id": "GO-2026-6090",
+      "level": "symbol",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.13",
+      "summary": "Limit handshake messages we are willing to accept post-handshake in crypto/tls",
+      "aliases": [
+        "CVE-2026-56862"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-6090"
+    },
+    {
+      "id": "GO-2026-6091",
+      "level": "package",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.13",
+      "summary": "Fix Javascript regexp context tracking in html/template",
+      "aliases": [
+        "CVE-2026-56858"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-6091"
+    },
+    {
+      "id": "GO-2026-6218",
+      "level": "package",
+      "module": "stdlib",
+      "version": "v1.24.0",
+      "fixed_version": "v1.25.13",
+      "summary": "Avoid quadratic complexity in resolvePath in net/url",
+      "aliases": [
+        "CVE-2026-56860"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-6218"
+    },
+    {
+      "id": "GO-2026-6303",
+      "level": "module",
+      "module": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "fixed_version": "v0.55.0",
+      "summary": "Source-address critical option not enforced for non-public-key auth callbacks in golang.org/x/crypto/ssh",
+      "aliases": [
+        "CVE-2026-56854"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-6303"
+    },
+    {
+      "id": "GO-2026-6354",
+      "level": "module",
+      "module": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "fixed_version": "v0.56.0",
+      "summary": "Prevent DoS on deadlocked undecided channel in golang.org/x/crypto/ssh",
+      "aliases": [
+        "CVE-2026-78662"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-6354"
+    },
+    {
+      "id": "GO-2026-6355",
+      "level": "module",
+      "module": "golang.org/x/crypto",
+      "version": "v0.39.0",
+      "fixed_version": "v0.56.0",
+      "summary": "Prevent DoS on deadlocked established channel in golang.org/x/crypto/ssh",
+      "aliases": [
+        "CVE-2026-56855"
+      ],
+      "url": "https://pkg.go.dev/vuln/GO-2026-6355"
+    }
+  ],
+  "finalized_on": "2026-09-11",
+  "source_manifest_unchanged_on_resume": true,
+  "postgresql_integration": {
+    "cluster": "/private/tmp/yogourt-security-pg-20260910",
+    "transport": "private Unix socket only",
+    "network_tcp": false,
+    "start_exit_code": 0,
+    "test_exit_code": 0,
+    "test_output": "ok  \tgithub.com/goyourt/yogourt/authorization/gormstore\t1.694s\nok  \tgithub.com/goyourt/yogourt/services/database\t2.305s\n",
+    "stop_exit_code": 0
+  }
+}

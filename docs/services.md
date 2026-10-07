@@ -25,29 +25,52 @@ Voir le [guide de configuration](configuration.md) pour les chemins et champs ex
 
 ## Modèles
 
-Un modèle persistant peut embarquer <code>interfaces.Base</code> :
+Aucune interface n’est requise pour le CRUD : les helpers acceptent n’importe quel modèle GORM. La seule interface du framework est <code>interfaces.Resource</code> (<code>GetPublicId</code>, <code>PublicIdColumn</code>), exigée uniquement là où une identité publique est constitutive de l’opération : hydratation de <code>HandleRequest</code>, <code>Authenticate</code>, <code>UpsertRelations</code> et sujet d’autorisation.
+
+Tout le reste est une capacité optionnelle, détectée par assertion de type :
+
+- <code>GeneratedIdentityResetter</code> : l’identité (PK, uuid à default SQL) est générée, <code>Create</code> la remet à zéro — un payload ne peut pas la choisir ; une PK applicative ne l’implémente pas et n’est jamais touchée ;
+- <code>CreatedBySetter</code>, <code>UpdatedBySetter</code>, <code>UpdatedAtSetter</code> : audit d’écriture ;
+- <code>DeleteAuditor</code> : audit de suppression (colonne + valeur à écrire) ;
+- <code>AuditActorProvider</code> : implémentée par l’utilisateur courant pour fournir l’acteur d’audit (entier).
+
+Le kit de briques embarquables compose ces capacités à la carte : <code>WithID</code>, <code>WithUuid</code>, <code>WithUuidPK</code>, <code>WithTimestamps</code>, <code>WithAudit</code>, <code>WithSoftDelete</code>. <code>interfaces.Base</code> reste le préréglage complet :
 
 ~~~go
 package models
 
 import "github.com/goyourt/yogourt/interfaces"
 
+// Tout : PK entière, uuid public, timestamps, audit, soft delete.
 type User struct {
 	interfaces.Base
 	Email string `gorm:"uniqueIndex;not null" json:"email"`
 	Name  string `json:"name"`
 }
+
+// À la carte : table technique, ni uuid, ni audit, ni soft delete.
+type ImportLog struct {
+	interfaces.WithID
+	interfaces.WithTimestamps
+	Payload string `json:"payload"`
+}
+
+// 100 % maison : PK applicative, colonne publique déclarée.
+type Customer struct {
+	PublicId *string `gorm:"primaryKey" json:"id"` // "cus_a8x3k...", posé par l'app
+	Name     string  `json:"name"`
+}
+
+func (c *Customer) GetPublicId() string {
+	if c.PublicId == nil {
+		return ""
+	}
+	return *c.PublicId
+}
+func (c *Customer) PublicIdColumn() string { return "public_id" }
 ~~~
 
-<code>*User</code> implémente alors <code>interfaces.BaseInterface</code>. La structure de base fournit :
-
-- un ID entier interne ;
-- un UUID PostgreSQL généré par <code>gen_random_uuid()</code> ;
-- les dates de création, modification et suppression ;
-- les IDs d’audit <code>CreatedById</code>, <code>UpdatedById</code> et <code>DeletedById</code> ;
-- la suppression douce GORM via <code>gorm.DeletedAt</code>.
-
-Les champs ID, UUID et audit sont stockés via des pointeurs. Utilisez leurs getters et setters lorsque la valeur peut ne pas être initialisée.
+Les champs ID, UUID et audit des briques sont stockés via des pointeurs.
 
 ## Lectures en base
 
@@ -65,9 +88,11 @@ if errors.Is(err, gorm.ErrRecordNotFound) {
 }
 ~~~
 
+<code>GetOneBy</code> interroge une sonde interne et ne copie le résultat dans l’objet qu’en cas de succès : sur <code>ErrRecordNotFound</code> ou panne, l’objet de l’appelant reste intact.
+
 ### Une collection
 
-Les méthodes de <code>interfaces.Base</code> ont des receivers pointeurs. Utilisez donc une slice de pointeurs :
+Utilisez une slice de pointeurs :
 
 ~~~go
 var users []*models.User
@@ -93,8 +118,13 @@ Une page ou une taille inférieure à 1 désactive la pagination.
 - une clé comme <code>profile.city</code> joint et précharge la relation <code>Profile</code> ;
 - une slice produit une condition <code>IN</code> ;
 - <code>database.Like("text")</code> produit une recherche <code>LIKE %text%</code> ;
-- <code>database.Or(value)</code> demande une condition OR ;
-- la clé spéciale <code>orderBy</code> est expérimentale.
+- <code>database.Or(value)</code> place le filtre dans un groupe d’alternatives, combiné avec <code>AND</code> aux filtres ordinaires ;
+- <code>database.And(value)</code> rend explicite cette conjonction : le filtre reste hors du groupe <code>Or</code>, comme une valeur ordinaire ;
+- la clé spéciale <code>orderBy</code> accepte un <code>database.OrderBy(colonne, direction)</code> ou une slice de <code>database.Ordering</code>, avec <code>database.Ascending</code> ou <code>database.Descending</code> comme direction.
+
+Les noms de colonnes et de relations sont validés contre le schéma GORM. Les
+chaînes ordinaires restent des valeurs littérales et les expressions SQL brutes
+de tri sont refusées. Voir les [filtres typés](query-filters.md).
 
 N’utilisez jamais directement des noms de colonne, relation ou ordre provenant d’une requête HTTP. Ces valeurs participent à la construction SQL et doivent venir d’une liste applicative fermée.
 
@@ -103,7 +133,7 @@ Les combinaisons complexes avec <code>Or</code> sont également fragiles, car un
 ~~~go
 var users []*models.User
 
-query, err := database.SearchQuery(map[string]any{"status": "active"}, &users, 1, 25)
+query, err := database.SearchQuery(&users, map[string]any{"status": "active"}, 1, 25)
 if err != nil {
 	// Base injoignable : il n’y a pas de requête à affiner.
 	return err
@@ -115,7 +145,7 @@ err = query.
 	Error
 ~~~
 
-<code>GetOneBy</code>, <code>GetAll</code> et <code>GetAllPaginated</code> retournent désormais l’erreur GORM (<code>gorm.ErrRecordNotFound</code> inclus pour <code>GetOneBy</code>) : une panne SQL n’est plus confondue avec un résultat vide. <code>SearchQuery</code> reste la porte d’entrée pour les requêtes GORM avancées ; elle retourne <code>(*gorm.DB, error)</code>, l’erreur étant celle de la connexion : tant qu’aucune connexion n’existe, il n’y a pas de <code>*gorm.DB</code> auquel accrocher l’échec. <code>JoinTables</code> suit la même signature.
+<code>GetOneBy</code>, <code>GetAll</code> et <code>GetAllPaginated</code> retournent l’erreur GORM (<code>gorm.ErrRecordNotFound</code> inclus pour <code>GetOneBy</code>) : une panne SQL n’est pas confondue avec un résultat vide. <code>SearchQuery</code> reste la porte d’entrée pour les requêtes GORM avancées ; elle retourne <code>(*gorm.DB, error)</code>, l’erreur étant celle de la connexion : tant qu’aucune connexion n’existe, il n’y a pas de <code>*gorm.DB</code> auquel accrocher l’échec.
 
 ## Écritures en base
 
@@ -141,20 +171,24 @@ API disponible :
 ~~~go
 err := writer.Create(user)
 err = writer.Update(user)
-err = writer.Upsert(user, map[string]any{"uuid": user.GetUuid()})
+err = writer.Upsert(user, map[string]any{"uuid": userUUID})
 err = writer.Delete(user)
 err = database.HardDelete(user)
 ~~~
 
-- <code>Create</code> remet l’ID à zéro et crée la ligne ;
-- <code>Update</code> cible la ligne par UUID, puis recharge l’objet ;
-- <code>Upsert</code> cherche d’abord avec les filtres fournis, puis crée ou met à jour ;
-- <code>Delete</code> effectue une suppression douce et renseigne l’audit ;
-- <code>HardDelete</code> effectue une suppression définitive.
+- <code>Create</code> remet l’identité générée à zéro si le modèle implémente <code>GeneratedIdentityResetter</code> (une PK applicative n’est jamais touchée), puis crée la ligne ;
+- <code>Update</code> exige la PK complète, cible la ligne par sa clé primaire et n’écrit que les champs non nuls (patch : il ne peut pas vider une colonne), puis recharge l’objet — le rechargement départage un update sans effet d’une ligne absente ;
+- <code>Upsert</code> sonde d’abord avec les filtres fournis dans une instance interne (l’objet de l’appelant n’est jamais dégradé), puis crée ou copie la PK trouvée avant de mettre à jour ;
+- <code>Delete</code> supprime — en douce si le modèle porte <code>gorm.DeletedAt</code>, définitivement sinon — et refuse une ligne absente ;
+- <code>HardDelete</code> supprime définitivement.
 
-<code>Delete</code> écrit deux instructions dans une seule transaction explicite : la colonne <code>deleted_by_id</code>, ciblée par UUID, puis la suppression douce GORM. Le callback GORM n’écrit que <code>deleted_at</code> et ne porte aucune colonne d’audit ; sans cette instruction dédiée, <code>deleted_by_id</code> restait NULL en base. Une ligne ne peut donc pas être supprimée sans auteur, ni attribuée sans être supprimée. Sans utilisateur authentifié, il n’y a pas de colonne d’audit à écrire et la suppression douce reste seule.
+L’audit ne s’écrit que si les deux parties optent : le modèle via ses capacités (<code>CreatedBySetter</code>, <code>UpdatedBySetter</code>, <code>DeleteAuditor</code>) et l’utilisateur courant via <code>AuditActorProvider</code> — un acteur d’identifiant 0 est refusé. <code>SetUpdatedAt</code> est appelé à chaque <code>Update</code>, acteur authentifié ou non.
 
-<code>Upsert</code> distingue désormais les deux échecs de sa lecture : seule l’absence de ligne (<code>gorm.ErrRecordNotFound</code>) mène à un <code>Create</code>, toute autre erreur de <code>GetOneBy</code> est retournée telle quelle sans écriture. Une panne SQL ne se transforme donc plus en création silencieuse.
+Aucune écriture du <code>DataWriter</code> ne persiste les associations GORM implicitement (<code>Omit(clause.Associations)</code>) : un champ relation non nil sur l’objet n’est jamais inséré en effet de bord. Les relations imbriquées passent par <code>UpsertRelations</code>.
+
+Quand le modèle implémente <code>DeleteAuditor</code> et qu’un acteur est présent, <code>Delete</code> écrit deux instructions dans une seule transaction, chacune devant toucher exactement une ligne : la colonne d’audit retournée par <code>DeleteAuditAssignment</code> (validée contre le schéma GORM), puis la suppression douce. Une ligne ne peut donc pas être supprimée sans auteur, ni attribuée sans être supprimée.
+
+<code>Upsert</code> distingue les deux échecs de sa lecture : seule l’absence de ligne (<code>gorm.ErrRecordNotFound</code>) mène à un <code>Create</code>, toute autre erreur est retournée sans écriture. <code>Upsert</code> est un « lookup puis write », pas un <code>INSERT … ON CONFLICT</code> atomique : deux appels concurrents peuvent produire une violation d’unicité, qui est propagée.
 
 Ces méthodes ne démarrent pas automatiquement une transaction commune. Dans un callback <code>Transaction</code>, utilisez directement le <code>*gorm.DB</code> reçu :
 
@@ -176,13 +210,13 @@ err = db.Transaction(func(tx *gorm.DB) error {
 Les helpers disponibles sont :
 
 ~~~go
-err := database.HydrateRelation(user, "Profile", user.Profile, user.ProfileID)
+err := database.HydrateRelation(user, "Profile", user.Profile)
 err = database.UpsertRelations(c, user, []string{"Profile"})
 ~~~
 
 <code>HydrateRelation</code> et <code>HydrateManyToManyRelation</code> retournent l’erreur GORM ; les sites d’appel qui l’ignorent continuent de compiler.
 
-<code>UpsertRelations</code> recherche des méthodes <code>GetRelation</code> et <code>SetRelation</code> par réflexion. Il ne prend pas encore en charge l’upsert many-to-many.
+<code>UpsertRelations</code> recherche des méthodes <code>GetRelation</code> et <code>SetRelation</code> par réflexion, prévalidées avant la première écriture, et exécute tous les upserts dans une transaction. Chaque relation doit implémenter <code>interfaces.Resource</code>. Identité publique vide : création ; identité présente et connue : mise à jour ; identité présente mais inconnue : erreur — un payload HTTP ne peut jamais créer une entité avec un identifiant choisi par le client. L’upsert many-to-many n’est pas pris en charge.
 
 <code>HydrateManyToManyRelation</code> attend un pointeur vers le champ slice à remplir et teste la <strong>slice</strong>, non le pointeur : une slice nil signifie « non chargée » et déclenche le préchargement, une slice allouée — même vide — est laissée telle quelle. La garde testait auparavant le pointeur, dont l'adresse n'est jamais nulle : le helper ne préchargeait donc jamais rien.
 
@@ -190,7 +224,7 @@ err = database.UpsertRelations(c, user, []string{"Profile"})
 
 ### Middleware
 
-<code>services.Authenticate</code> valide un token Bearer, charge l’utilisateur par UUID et le place dans le contexte.
+<code>services.Authenticate</code> valide un token Bearer, charge l’utilisateur (une <code>interfaces.Resource</code>) par le claim <code>sub</code> — une chaîne opaque, jamais validée en format — et le place dans le contexte.
 
 ~~~go
 func authenticate(c *gin.Context) {
@@ -208,7 +242,7 @@ Le header doit avoir exactement la forme :
 Authorization: Bearer <token>
 ~~~
 
-Un header absent ou mal formé est refusé avec un corps générique, comme le reste de la chaîne d’autorisation : <code>401</code> et <code>{"error":"Unauthorized"}</code>. La raison interne reste côté serveur, dans les logs. Il en va de même d’un token invalide, d’un claim <code>uuid</code> absent ou mal formé et d’un token valide dont le sujet n’a aucune ligne en base : ces quatre cas renvoient strictement la même réponse. Une panne de base pendant la recherche de l’utilisateur, elle, répond <code>503</code> : une indisponibilité n’est jamais maquillée en refus d’authentification.
+Un header absent ou mal formé est refusé avec un corps générique, comme le reste de la chaîne d’autorisation : <code>401</code> et <code>{"error":"Unauthorized"}</code>. La raison interne reste côté serveur, dans les logs. Il en va de même d’un token invalide, d’un claim <code>sub</code> absent, vide ou non textuel et d’un token valide dont le sujet n’a aucune ligne en base : ces quatre cas renvoient strictement la même réponse. Une panne de base pendant la recherche de l’utilisateur, elle, répond <code>503</code> : une indisponibilité n’est jamais maquillée en refus d’authentification.
 
 Récupération de l’utilisateur :
 
@@ -223,12 +257,12 @@ if !ok {
 ### Tokens
 
 ~~~go
-token, err := services.CreateToken(user.GetUuid())
+token, err := services.CreateToken(user.GetPublicId())
 ~~~
 
 Les tokens créés utilisent HS256 et contiennent :
 
-- <code>uuid</code> ;
+- <code>sub</code> (l’identifiant public du modèle, chaîne opaque) ;
 - <code>exp</code>, calculé à partir de <code>security.token_expires</code> en minutes.
 
 Les helpers de plus bas niveau sont également publics :
@@ -236,17 +270,17 @@ Les helpers de plus bas niveau sont également publics :
 ~~~go
 raw, err := services.GetRequestToken(c)
 parsed, err := services.ValidToken(raw)
-uuid, err := services.GetClaim(parsed, "uuid")
+subject, err := services.GetStringClaim(parsed, "sub")
 ~~~
 
 Le secret de signature est validé : <code>services.ValidateSecretKey</code> refuse un secret vide ou de moins de 32 octets, et <code>CreateToken</code> comme <code>ValidToken</code> échouent alors sans produire ni accepter de token. <code>ValidToken</code> fixe aussi explicitement l’algorithme accepté (<code>HS256</code>), ce qui ferme la substitution d’algorithme. Le démarrage signale le problème avant la première requête : hors production un secret vide ou trop court n’est que journalisé en warning, en mode <code>production</code> il empêche le démarrage.
 
-Limites de sécurité restantes :
-
-- aucun issuer ou audience n’est vérifié ;
-- l’expiration n’est pas explicitement exigée pour les tokens qui ne sont pas créés par Yogourt.
-
-Pour un usage sensible, complétez ces helpers par une politique de claims (issuer, audience, expiration obligatoire) dans une couche applicative.
+La validation exige aussi <code>exp</code>, <code>iss</code> et <code>aud</code>.
+Configurez <code>security.token_issuer</code> et
+<code>security.token_audience</code>, ainsi qu’une durée
+<code>security.token_expires</code> strictement positive. Les tokens émis avant
+cette politique doivent être renouvelés. Voir la [politique JWT](auth-policy.md).
+La révocation et la rotation des clés restent à organiser dans l’application.
 
 ## Mots de passe
 
@@ -279,19 +313,24 @@ Les drapeaux sont indépendants et cumulatifs ; à <code>false</code> ou absents
 
 L’erreur retournée par <code>CheckPassword</code> ne doit **jamais** être renvoyée au client, même reformulée : elle distingue un mot de passe faux (<code>bcrypt.ErrMismatchedHashAndPassword</code>) d’un hash malformé, tronqué ou de version inconnue (<code>bcrypt.ErrHashTooShort</code>, <code>bcrypt.HashVersionTooNewError</code>…). Cette différence indique à un attaquant si le compte existe et comment son identifiant est stocké. Journalisez-la si besoin, et répondez un message générique unique :
 
+Préparez au démarrage un <code>dummyPasswordHash</code> avec
+<code>GetHashedPassword</code>, au même coût que les mots de passe stockés.
+Le chemin « utilisateur inconnu » effectue ainsi aussi une comparaison bcrypt :
+
 ~~~go
 var user models.User
-if err := database.GetOneBy(&user, map[string]any{"username": req.Username}); err != nil {
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		routing.RespondAndAbort(c, http.StatusUnauthorized, "Invalid credentials")
-		return
-	}
+lookupErr := database.GetOneBy(&user, map[string]any{"username": req.Username})
+if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
 	routing.RespondServiceUnavailable(c)
 	return
 }
 
-// Utilisateur inconnu et mot de passe faux répondent strictement la même chose.
-if err := services.CheckPassword(user.Password, req.Password); err != nil {
+hash := dummyPasswordHash
+if lookupErr == nil {
+	hash = user.Password
+}
+passwordErr := services.CheckPassword(hash, req.Password)
+if lookupErr != nil || passwordErr != nil {
 	routing.RespondAndAbort(c, http.StatusUnauthorized, "Invalid credentials")
 	return
 }
@@ -305,7 +344,14 @@ count, err := services.GetPasswordFailureCount(username)
 ~~~
 
 Les deux appels remontent l’erreur de <code>GetCache()</code> si Redis est injoignable.
-Le compteur regarde une fenêtre de 24 heures, mais les entrées anciennes ne sont actuellement ni supprimées ni associées à un TTL. Les appels utilisent aussi <code>context.Background()</code> et plusieurs échecs dans la même seconde peuvent partager le même membre Redis.
+Chaque échec possède un événement distinct. Redis supprime les événements hors
+de la fenêtre de 24 heures et applique un TTL au compteur. Utilisez
+<code>RecordPasswordFailure(ctx, username)</code> pour enregistrer et obtenir
+le total dans une même opération atomique, ou
+<code>GetPasswordFailureCountContext(ctx, username)</code> pour lire avec le
+contexte de la requête. Le seuil de verrouillage reste une décision applicative.
+Voir le [suivi des échecs](login-failures.md) pour le namespace et la transition
+depuis les anciennes clés.
 
 ## Fichiers
 

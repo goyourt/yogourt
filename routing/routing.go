@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -30,6 +32,15 @@ const (
 	// DefaultPrefix is the HTTP prefix every route is published under when
 	// neither WithPrefix nor server.base_path names another one.
 	DefaultPrefix = "/api"
+
+	defaultReadHeaderTimeout = 5 * time.Second
+	defaultReadTimeout       = 30 * time.Second
+	defaultWriteTimeout      = 30 * time.Second
+	defaultIdleTimeout       = 2 * time.Minute
+	maxHTTPTimeout           = 10 * time.Minute
+	defaultMaxHeaderBytes    = 1 << 20
+	maxHTTPHeaderBytes       = 8 << 20
+	requestBodyLimitKey      = "yogourt.request_body_limit"
 )
 
 // config holds the settings applied by the functional options of Initialize.
@@ -88,6 +99,10 @@ func Initialize(options ...Option) {
 	}
 
 	mainConfig := providers.GetMainConfig()
+	server, err := newHTTPServer(nil, mainConfig.Server)
+	if err != nil {
+		log.Fatal("Invalid server configuration: ", err)
+	}
 
 	apiFolder, err := resolveAPIFolder(mainConfig)
 	if err != nil {
@@ -113,7 +128,7 @@ func Initialize(options ...Option) {
 		}
 	}
 
-	validateSecretKeyAtBoot(mainConfig.Security.SecretKey, mainConfig.Mode)
+	validateJWTConfigAtBoot(mainConfig)
 
 	// Before gin.Default(): Gin logs its mode as it builds the engine, so
 	// setting it afterwards would leave a log line contradicting reality.
@@ -122,6 +137,10 @@ func Initialize(options ...Option) {
 	log.Print(bootBanner(mainConfig))
 
 	r := gin.Default()
+	if err := configureTrustedProxies(r, mainConfig.Server.TrustedProxies); err != nil {
+		log.Fatal("Invalid server.trusted_proxies: ", err)
+	}
+	r.Use(limitRequestBody(mainConfig.Server))
 	if !corsEnabled(mainConfig) {
 		log.Print("CORS is off (server.cors: false): no CORS header, and preflight requests are not answered")
 		if corsSectionConfigured(mainConfig) {
@@ -176,9 +195,100 @@ func Initialize(options ...Option) {
 		}
 	}
 
-	serverConfig := mainConfig.Server
-	if err := r.Run(listenAddress(serverConfig.Host, serverConfig.Port)); err != nil {
+	server.Handler = r
+	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal("Error starting server: ", err)
+	}
+}
+
+// newHTTPServer resolves bounded defaults for every listener budget. Passing a
+// nil handler is useful while Initialize is still building the Gin engine.
+func newHTTPServer(handler http.Handler, cfg providers.ServerConfig) (*http.Server, error) {
+	readHeaderTimeout, err := boundedHTTPTimeout("server.read_header_timeout", cfg.ReadHeaderTimeout, defaultReadHeaderTimeout)
+	if err != nil {
+		return nil, err
+	}
+	readTimeout, err := boundedHTTPTimeout("server.read_timeout", cfg.ReadTimeout, defaultReadTimeout)
+	if err != nil {
+		return nil, err
+	}
+	writeTimeout, err := boundedHTTPTimeout("server.write_timeout", cfg.WriteTimeout, defaultWriteTimeout)
+	if err != nil {
+		return nil, err
+	}
+	idleTimeout, err := boundedHTTPTimeout("server.idle_timeout", cfg.IdleTimeout, defaultIdleTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	maxHeaderBytes := cfg.MaxHeaderBytes
+	if maxHeaderBytes == 0 {
+		maxHeaderBytes = defaultMaxHeaderBytes
+	}
+	if maxHeaderBytes < 0 || maxHeaderBytes > maxHTTPHeaderBytes {
+		return nil, fmt.Errorf("server.max_header_bytes must be between 1 and %d", maxHTTPHeaderBytes)
+	}
+	if _, err := cfg.RequestBodyLimit(); err != nil {
+		return nil, err
+	}
+
+	return &http.Server{
+		Addr:              listenAddress(cfg.Host, cfg.Port),
+		Handler:           handler,
+		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
+		MaxHeaderBytes:    maxHeaderBytes,
+	}, nil
+}
+
+func boundedHTTPTimeout(name string, configured providers.Duration, fallback time.Duration) (time.Duration, error) {
+	value := configured.Duration()
+	if value == 0 {
+		return fallback, nil
+	}
+	if value < 0 || value > maxHTTPTimeout {
+		return 0, fmt.Errorf("%s must be positive and at most %s", name, maxHTTPTimeout)
+	}
+	return value, nil
+}
+
+// configureTrustedProxies always calls Gin's proxy configuration. An absent or
+// empty list trusts no proxy, so client-supplied forwarding headers cannot
+// replace the peer address.
+func configureTrustedProxies(engine *gin.Engine, proxies []string) error {
+	if len(proxies) == 0 {
+		return engine.SetTrustedProxies(nil)
+	}
+	return engine.SetTrustedProxies(proxies)
+}
+
+// limitRequestBody installs the total body cap before any route handler can
+// bind JSON or parse multipart data. Content-Length is rejected immediately;
+// streamed bodies remain protected by MaxBytesReader while they are consumed.
+func limitRequestBody(cfg providers.ServerConfig) gin.HandlerFunc {
+	limit, _ := cfg.RequestBodyLimit() // newHTTPServer validates this at boot.
+	return func(c *gin.Context) {
+		if c.Request.ContentLength > limit {
+			c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{"error": "Request body too large"})
+			return
+		}
+		if c.Request.Body != nil {
+			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
+			c.Set(requestBodyLimitKey, limit)
+		}
+		defer removeMultipartFiles(c.Request)
+		c.Next()
+	}
+}
+
+// removeMultipartFiles mirrors net/http's end-of-request cleanup. Keeping it
+// here also covers direct engine tests and makes the lifetime explicit for
+// multipart bodies parsed by application middleware or handlers.
+func removeMultipartFiles(request *http.Request) {
+	if request != nil && request.MultipartForm != nil {
+		_ = request.MultipartForm.RemoveAll()
 	}
 }
 
@@ -313,28 +423,33 @@ func applyGinMode(mode string) {
 	}
 }
 
-// validateSecretKeyAtBoot surfaces a misconfigured JWT secret at startup
+// validateJWTConfigAtBoot surfaces a misconfigured JWT policy at startup
 // instead of letting every token operation fail at request time (AUTHZ-012).
 // Outside production the problem is only logged: a development or test
 // application must keep booting with a throwaway secret, and many do not use
-// the token service at all. In production a short secret is fatal — it is the
-// one place where booting with a guessable signing key is worse than not
-// booting. The length rule is kept in sync with services.ValidateSecretKey
-// (routing cannot import services — import cycle).
-func validateSecretKeyAtBoot(secret, mode string) {
+// the token service at all. In production an invalid policy is fatal. These
+// rules are kept in sync with services.ValidateTokenConfig (routing cannot
+// import services — import cycle).
+func validateJWTConfigAtBoot(config *providers.MainConfig) {
 	const minSecretKeyLength = 32
 
 	problem := ""
 	switch {
-	case secret == "":
+	case config.Security.SecretKey == "":
 		problem = "security.secret_key is empty"
-	case len(secret) < minSecretKeyLength:
-		problem = fmt.Sprintf("security.secret_key is too short (%d bytes, minimum %d)", len(secret), minSecretKeyLength)
+	case len(config.Security.SecretKey) < minSecretKeyLength:
+		problem = fmt.Sprintf("security.secret_key is too short (%d bytes, minimum %d)", len(config.Security.SecretKey), minSecretKeyLength)
+	case strings.TrimSpace(config.Security.TokenIssuer) == "":
+		problem = "security.token_issuer is empty"
+	case strings.TrimSpace(config.Security.TokenAudience) == "":
+		problem = "security.token_audience is empty"
+	case config.Security.TokenExpires <= 0:
+		problem = "security.token_expires must be greater than zero"
 	default:
 		return
 	}
 
-	if strings.EqualFold(mode, productionMode) {
+	if strings.EqualFold(config.Mode, productionMode) {
 		log.Fatalf("%s: refusing to start in production mode", problem)
 	}
 	log.Printf("warning: %s; JWT features stay unusable until it is fixed, and production mode would refuse to start", problem)

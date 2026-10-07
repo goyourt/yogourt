@@ -15,11 +15,11 @@ func TestGetCurrentUserMissing(t *testing.T) {
 	}
 }
 
-func TestGetCurrentUserUnexpectedType(t *testing.T) {
+func TestGetCurrentUserReturnsStoredValue(t *testing.T) {
 	c, _ := gin.CreateTestContext(nil)
-	c.Set(providers.ContextCurrentUser, "not-a-base-interface")
+	c.Set(providers.ContextCurrentUser, "any-value")
 
-	if user := providers.GetCurrentUser(c); user != nil {
-		t.Errorf("expected nil user for an unexpected type, got %v", user)
+	if user := providers.GetCurrentUser(c); user != "any-value" {
+		t.Errorf("expected the stored value back, got %v", user)
 	}
 }

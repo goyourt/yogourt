@@ -2,7 +2,13 @@ package providers
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"log"
+	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -11,6 +17,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 // cacheDialTimeout bounds both the TCP dial and the readiness PING performed
@@ -87,11 +94,12 @@ func InitDB() (*gorm.DB, error) {
 		return nil, err
 	}
 
-	if err := validateSSLMode(cfg.Database.SSLMode); err != nil {
+	dsn, err := buildDSN(cfg.Database)
+	if err != nil {
 		return nil, err
 	}
 
-	connection, err := gorm.Open(postgres.Open(buildDSN(cfg.Database)), &gorm.Config{})
+	connection, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: parameterizedDatabaseLogger()})
 	if err != nil {
 		return nil, fmt.Errorf("❌ Error while connecting database: %w", err)
 	}
@@ -104,10 +112,7 @@ func InitDB() (*gorm.DB, error) {
 	return connection, nil
 }
 
-// defaultSSLMode keeps the connection in clear text when database.ssl_mode is
-// empty. The DSN hard-coded it, and turning TLS on for every application that
-// never wrote the key would break the ones talking to a server without it.
-const defaultSSLMode = "disable"
+const defaultNetworkSSLMode = "verify-full"
 
 // sslModes lists the libpq values database.ssl_mode accepts. An unknown mode
 // is refused at boot: libpq would reject the DSN anyway, with an error that
@@ -121,14 +126,82 @@ var sslModes = map[string]bool{
 	"verify-full": true,
 }
 
-// validateSSLMode checks database.ssl_mode against the libpq modes.
-func validateSSLMode(sslMode string) error {
-	mode := strings.ToLower(strings.TrimSpace(sslMode))
-	if mode == "" || sslModes[mode] {
-		return nil
+// resolveDatabaseSSLMode permits clear text only for an explicitly approved
+// local transport: a Unix socket under AllowInsecureLocalSocket, or a TCP
+// loopback host under AllowInsecureLoopback. Other network hosts use
+// verify-full and cannot opt down to an opportunistic or unauthenticated TLS
+// mode.
+func resolveDatabaseSSLMode(cfg DatabaseConfig) (string, error) {
+	mode := strings.ToLower(strings.TrimSpace(cfg.SSLMode))
+	if mode != "" && !sslModes[mode] {
+		return "", fmt.Errorf("unsupported database.ssl_mode %q: use one of disable, allow, prefer, require, verify-ca, verify-full", cfg.SSLMode)
 	}
 
-	return fmt.Errorf("unsupported database.ssl_mode %q: use one of disable, allow, prefer, require, verify-ca, verify-full", sslMode)
+	if isLocalSocketHost(cfg.Host) {
+		if cfg.AllowInsecureLoopback {
+			return "", fmt.Errorf("database.allow_insecure_loopback only applies when database.host is a TCP loopback host such as localhost, 127.0.0.1 or ::1")
+		}
+		if !cfg.AllowInsecureLocalSocket {
+			return "", fmt.Errorf("database host %q is a local Unix socket: set database.allow_insecure_local_socket: true to allow its unencrypted local transport", cfg.Host)
+		}
+		if mode != "" && mode != "disable" {
+			return "", fmt.Errorf("database.ssl_mode must be disable for a local Unix socket")
+		}
+		return "disable", nil
+	}
+
+	if cfg.AllowInsecureLocalSocket {
+		return "", fmt.Errorf("database.allow_insecure_local_socket only applies when database.host is an explicit absolute Unix socket path")
+	}
+
+	if isLoopbackHost(cfg.Host) {
+		if cfg.AllowInsecureLoopback {
+			if mode == "" {
+				return "disable", nil
+			}
+			return mode, nil
+		}
+		if mode == "" {
+			return defaultNetworkSSLMode, nil
+		}
+		if mode != "verify-full" {
+			return "", fmt.Errorf("database.ssl_mode %q does not verify a network server identity: use verify-full, or set database.allow_insecure_loopback: true for this loopback host", cfg.SSLMode)
+		}
+		return mode, nil
+	}
+
+	if cfg.AllowInsecureLoopback && strings.TrimSpace(cfg.Host) != "" {
+		return "", fmt.Errorf("database.allow_insecure_loopback only applies when database.host is a TCP loopback host such as localhost, 127.0.0.1 or ::1")
+	}
+	if mode == "" {
+		return defaultNetworkSSLMode, nil
+	}
+	if mode != "verify-full" {
+		return "", fmt.Errorf("database.ssl_mode %q does not verify a network server identity: use verify-full", cfg.SSLMode)
+	}
+	return mode, nil
+}
+
+func isLocalSocketHost(host string) bool {
+	host = strings.TrimSpace(host)
+	return host != "" && filepath.IsAbs(host)
+}
+
+// isLoopbackHost recognizes the literals a developer points at a local
+// Postgres: "localhost" and any literal loopback IP, bracketed or not. It
+// never resolves a name — a DNS entry answering 127.0.0.1 is still a network
+// host here, because what it answers is not under this configuration's
+// control.
+func isLoopbackHost(host string) bool {
+	host = strings.TrimSpace(host)
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = host[1 : len(host)-1]
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // buildDSN assembles the libpq keyword/value connection string.
@@ -138,10 +211,10 @@ func validateSSLMode(sslMode string) error {
 // produces — silently truncated the DSN into a connection to something else.
 // Optional keywords are only written when they carry a value, which leaves
 // libpq its own defaults for the rest.
-func buildDSN(cfg DatabaseConfig) string {
-	sslMode := strings.ToLower(strings.TrimSpace(cfg.SSLMode))
-	if sslMode == "" {
-		sslMode = defaultSSLMode
+func buildDSN(cfg DatabaseConfig) (string, error) {
+	sslMode, err := resolveDatabaseSSLMode(cfg)
+	if err != nil {
+		return "", err
 	}
 
 	// A port of 0 is an undeclared port, not a port to dial: leaving the
@@ -177,7 +250,17 @@ func buildDSN(cfg DatabaseConfig) string {
 		dsn.WriteString(quoteDSNValue(pair.value))
 	}
 
-	return dsn.String()
+	return dsn.String(), nil
+}
+
+func parameterizedDatabaseLogger() logger.Interface {
+	return logger.New(log.New(os.Stdout, "\r\n", log.LstdFlags), logger.Config{
+		SlowThreshold:             200 * time.Millisecond,
+		LogLevel:                  logger.Warn,
+		IgnoreRecordNotFoundError: false,
+		Colorful:                  false,
+		ParameterizedQueries:      true,
+	})
 }
 
 // quoteDSNValue writes a value the way libpq reads one: single quotes around
@@ -238,12 +321,17 @@ func validateDatabaseType(databaseType string) error {
 // caused it.
 func InitCache() (*redis.Client, error) {
 	cfg := GetMainConfig().Cache
+	tlsConfig, err := buildCacheTLSConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	client := redis.NewClient(&redis.Options{
 		Addr:        cfg.Host + ":" + cfg.Port,
 		Password:    cfg.Password,
 		DB:          cfg.DB,
 		DialTimeout: cacheDialTimeout,
+		TLSConfig:   tlsConfig,
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), cacheDialTimeout)
@@ -256,4 +344,56 @@ func InitCache() (*redis.Client, error) {
 
 	fmt.Println("✅ Connexion with Redis")
 	return client, nil
+}
+
+func buildCacheTLSConfig(cfg CacheConfig) (*tls.Config, error) {
+	tlsCfg := cfg.TLS
+	if !tlsCfg.Enabled {
+		if strings.TrimSpace(tlsCfg.ServerName) != "" || strings.TrimSpace(tlsCfg.CAFile) != "" ||
+			strings.TrimSpace(tlsCfg.CertFile) != "" || strings.TrimSpace(tlsCfg.KeyFile) != "" {
+			return nil, fmt.Errorf("cache.tls certificate settings require cache.tls.enabled: true")
+		}
+		return nil, nil
+	}
+
+	result := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		ServerName: strings.TrimSpace(tlsCfg.ServerName),
+	}
+	if result.ServerName == "" {
+		result.ServerName = strings.TrimSpace(cfg.Host)
+	}
+	if result.ServerName == "" {
+		return nil, fmt.Errorf("cache.tls requires cache.host or cache.tls.server_name for certificate verification")
+	}
+
+	if caFile := strings.TrimSpace(tlsCfg.CAFile); caFile != "" {
+		caPEM, err := os.ReadFile(caFile)
+		if err != nil {
+			return nil, fmt.Errorf("read cache.tls.ca_file: %w", err)
+		}
+		roots, err := x509.SystemCertPool()
+		if err != nil || roots == nil {
+			roots = x509.NewCertPool()
+		}
+		if !roots.AppendCertsFromPEM(caPEM) {
+			return nil, fmt.Errorf("cache.tls.ca_file contains no valid CA certificate")
+		}
+		result.RootCAs = roots
+	}
+
+	certFile := strings.TrimSpace(tlsCfg.CertFile)
+	keyFile := strings.TrimSpace(tlsCfg.KeyFile)
+	if (certFile == "") != (keyFile == "") {
+		return nil, fmt.Errorf("cache.tls.cert_file and cache.tls.key_file must be configured together")
+	}
+	if certFile != "" {
+		certificate, err := tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			return nil, fmt.Errorf("load cache TLS client certificate: %w", err)
+		}
+		result.Certificates = []tls.Certificate{certificate}
+	}
+
+	return result, nil
 }

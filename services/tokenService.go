@@ -2,7 +2,6 @@ package services
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -15,7 +14,9 @@ import (
 // signing secret. A short secret makes HMAC signatures brute-forceable.
 const minSecretKeyLength = 32
 
-var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+// subjectClaim carries the authenticated model's public id: an opaque,
+// stable, non-empty string — never format-validated.
+const subjectClaim = "sub"
 
 // ValidateSecretKey rejects an empty or too short JWT secret.
 func ValidateSecretKey(secret string) error {
@@ -28,17 +29,45 @@ func ValidateSecretKey(secret string) error {
 	return nil
 }
 
-func CreateToken(uuid string) (string, error) {
+// ValidateTokenConfig checks every setting required to issue and validate a
+// JWT for this application.
+func ValidateTokenConfig(config *providers.MainConfig) error {
+	if config == nil {
+		return fmt.Errorf("JWT configuration must not be nil")
+	}
+	if err := ValidateSecretKey(config.Security.SecretKey); err != nil {
+		return err
+	}
+	if strings.TrimSpace(config.Security.TokenIssuer) == "" {
+		return fmt.Errorf("JWT issuer must not be empty")
+	}
+	if strings.TrimSpace(config.Security.TokenAudience) == "" {
+		return fmt.Errorf("JWT audience must not be empty")
+	}
+	if config.Security.TokenExpires <= 0 {
+		return fmt.Errorf("JWT token expiration must be greater than zero minutes")
+	}
+
+	return nil
+}
+
+func CreateToken(subject string) (string, error) {
+	if subject == "" {
+		return "", fmt.Errorf("token subject must not be empty")
+	}
+
 	config := providers.GetMainConfig()
 
-	if err := ValidateSecretKey(config.Security.SecretKey); err != nil {
+	if err := ValidateTokenConfig(config); err != nil {
 		return "", err
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256,
 		jwt.MapClaims{
-			"uuid": uuid,
-			"exp":  time.Now().Add(time.Minute * time.Duration(config.Security.TokenExpires)).Unix(),
+			subjectClaim: subject,
+			"exp":        time.Now().Add(time.Minute * time.Duration(config.Security.TokenExpires)).Unix(),
+			"iss":        config.Security.TokenIssuer,
+			"aud":        config.Security.TokenAudience,
 		})
 
 	tokenString, err := token.SignedString([]byte(config.Security.SecretKey))
@@ -52,13 +81,18 @@ func CreateToken(uuid string) (string, error) {
 func ValidToken(tokenString string) (*jwt.Token, error) {
 	config := providers.GetMainConfig()
 
-	if err := ValidateSecretKey(config.Security.SecretKey); err != nil {
+	if err := ValidateTokenConfig(config); err != nil {
 		return nil, err
 	}
 
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		return []byte(config.Security.SecretKey), nil
-	}, jwt.WithValidMethods([]string{"HS256"}))
+	},
+		jwt.WithValidMethods([]string{"HS256"}),
+		jwt.WithExpirationRequired(),
+		jwt.WithIssuer(config.Security.TokenIssuer),
+		jwt.WithAudience(config.Security.TokenAudience),
+	)
 
 	if err != nil {
 		return nil, err
@@ -97,22 +131,20 @@ func GetClaim(token *jwt.Token, claimKey string) (any, error) {
 	return nil, fmt.Errorf("invalid token claims")
 }
 
-// GetUUIDClaim extracts claimKey as a string and validates that it is
-// formatted as a UUID before returning it.
-func GetUUIDClaim(token *jwt.Token, claimKey string) (string, error) {
+// GetStringClaim extracts claimKey as a non-empty string.
+func GetStringClaim(token *jwt.Token, claimKey string) (string, error) {
 	claimValue, err := GetClaim(token, claimKey)
 	if err != nil {
 		return "", err
 	}
 
-	uuidValue, ok := claimValue.(string)
+	value, ok := claimValue.(string)
 	if !ok {
 		return "", fmt.Errorf("claim %s is not a string", claimKey)
 	}
-
-	if !uuidPattern.MatchString(uuidValue) {
-		return "", fmt.Errorf("claim %s is not a valid UUID", claimKey)
+	if value == "" {
+		return "", fmt.Errorf("claim %s is empty", claimKey)
 	}
 
-	return uuidValue, nil
+	return value, nil
 }

@@ -1,9 +1,9 @@
 # Migration de v1.1 vers v2
 
-Ce guide cible la branche de préversion <code>release/v2.0.0</code>. Il sera à ajuster lors de la publication du tag stable.
+Ce guide cible le chantier de préversion <code>feature/v2</code>. Il sera à ajuster lors de la publication stable.
 
 > [!IMPORTANT]
-> Le module porte encore le chemin <code>github.com/goyourt/yogourt</code>. N’ajoutez pas <code>/v2</code> aux imports tant que le module et le tag v2 n’ont pas été publiés sous cette forme. Pour les essais, épinglez une révision v2 précise.
+> Le chemin <code>github.com/goyourt/yogourt</code> est conservé sans suffixe, par décision du mainteneur. N’ajoutez pas <code>/v2</code> aux imports. Épinglez un commit précis pour les essais ; le numéro de version publié reste à décider, car Go exige un suffixe majeur pour un tag <code>v2.x</code> avec <code>go.mod</code>. Voir les [règles de versionnement Go](https://go.dev/doc/modules/major-version).
 
 ## Résumé des changements incompatibles
 
@@ -77,10 +77,9 @@ code et dans la configuration permettait à un programme de contredire son
 propre <code>yogourt.yaml</code>. Sans <code>route_folder</code>, le démarrage
 échoue en nommant la clé.
 
-<strong>Base de données</strong> : le DSN n’impose plus <code>sslmode=disable</code>.
-C’est désormais la valeur par défaut de <code>database.ssl_mode</code>, donc une
-configuration inchangée ouvre la même connexion qu’avant, et un déploiement qui
-exige TLS n’a plus à adapter le fournisseur :
+<strong>Base de données</strong> : les connexions TCP exigent désormais
+<code>database.ssl_mode: verify-full</code>, également choisi par défaut.
+Configurez l’autorité de certification de votre serveur si nécessaire :
 
 ~~~yaml
 database:
@@ -104,7 +103,7 @@ processus, il est retourné. Les signatures suivantes changent :
 | <code>providers.GetDB() *gorm.DB</code> | <code>providers.GetDB() (*gorm.DB, error)</code> |
 | <code>providers.InitDB() *gorm.DB</code> | <code>providers.InitDB() (*gorm.DB, error)</code> |
 | <code>database.SearchQuery(...) *gorm.DB</code> | <code>database.SearchQuery(...) (*gorm.DB, error)</code> |
-| <code>database.JoinTables(...) *gorm.DB</code> | <code>database.JoinTables(...) (*gorm.DB, error)</code> |
+| <code>database.JoinTables(...)</code> | supprimé — <code>database.SearchQuery(...) (*gorm.DB, error)</code> puis l’API GORM |
 
 ~~~go
 db := providers.GetDB()                    // v1 : log.Fatalf, le processus sort
@@ -190,7 +189,7 @@ Consultez la [référence complète](configuration.md). En particulier :
 - une section <code>cors</code> sans origine n’installe plus le middleware : la v0.5 activait alors toutes les origines. Un frontend d’une autre origine cesse de fonctionner tant que <code>allowed_origins</code> n’est pas rempli ;
 - <code>allowed_headers</code> vide ne prend plus seulement les défauts de Gin : <code>Authorization</code> y est ajouté, sans quoi le login JWT du framework ne pouvait pas fonctionner depuis une autre origine. Une liste écrite reste utilisée telle quelle ;
 - <code>cors.max_age</code> n’est plus multiplié par <code>time.Hour</code> et accepte un nombre de secondes : <code>max_age: 12ns</code>, seul contournement de l’ancienne conversion, vaut désormais 12 nanosecondes — écrivez <code>12h</code> ;
-- le fournisseur DB reste PostgreSQL et force <code>sslmode=disable</code>.
+- le fournisseur DB reste PostgreSQL et exige <code>verify-full</code> sur TCP ; l’exception locale exige un chemin de socket Unix et <code>allow_insecure_local_socket: true</code>.
 
 ## 3. Mettre à jour les providers
 
@@ -345,17 +344,33 @@ Tous les fichiers <code>.go</code> scannés, sauf <code>_test.go</code>, doivent
 
 Le CLI stable v0.5 ne fournit pas les commandes v2 <code>build</code>, <code>dev</code> ou <code>start</code> et son <code>init</code> génère encore une structure v1. Utilisez la compilation manuelle tant qu’une nouvelle version n’est pas publiée.
 
-## 8. Adapter les implémentations de fichiers
+## 8. Migrer les modèles vers le nouveau contrat
 
-Les implémentations personnalisées de <code>interfaces.FileInterface</code> doivent désormais fournir :
+<code>interfaces.BaseInterface</code> et ses 16 méthodes n’existent plus. Le CRUD n’exige plus aucune interface ; la seule interface du framework est <code>interfaces.Resource</code> (<code>GetPublicId</code>, <code>PublicIdColumn</code>), requise pour l’hydratation de <code>HandleRequest</code>, <code>Authenticate</code>, <code>UpsertRelations</code> et le sujet d’autorisation. L’audit, le reset d’identité générée et le soft delete audité sont des capacités optionnelles détectées par assertion de type (<code>GeneratedIdentityResetter</code>, <code>CreatedBySetter</code>, <code>UpdatedBySetter</code>, <code>UpdatedAtSetter</code>, <code>DeleteAuditor</code>, <code>AuditActorProvider</code>).
+
+- Les modèles qui embarquent <code>interfaces.Base</code> ne changent pas : <code>Base</code> est recomposée en briques (<code>WithID</code>, <code>WithUuid</code>, <code>WithTimestamps</code>, <code>WithAudit</code>, <code>WithSoftDelete</code>) et porte les mêmes capacités qu’avant.
+- Pour un nouveau modèle dont l’UUID public est aussi la clé primaire, utilisez <code>WithUuidPK</code> sans <code>WithID</code>. Le CRUD réinitialise cette identité générée lors d’une création. Le script de migration de <code>Base</code> ne convertit pas une PK entière existante en UUID : une telle conversion demande une migration applicative des clés étrangères.
+- Le code qui appelait les getters/setters supprimés (<code>GetID</code>, <code>GetUuid</code>, <code>SetCreatedById</code>…) accède aux champs des briques directement (<code>*user.ID</code>, <code>user.Uuid</code>) ou passe par <code>GetPublicId()</code>.
+- <code>HydrateRelation</code> perd son paramètre <code>relationId</code> ; <code>SearchQuery</code> prend la slice en premier argument ; <code>JoinTables</code> est supprimé (passez par <code>SearchQuery</code> puis l’API GORM) ; <code>database.Like</code>/<code>Or</code> côté filtres sont inchangés.
+- <code>Create</code> et <code>Update</code> n’écrivent plus jamais les associations implicitement (<code>Omit(clause.Associations)</code>) : les relations imbriquées passent par <code>UpsertRelations</code>. <code>Update</code> ne modifie que les champs non nuls (patch) — il ne peut pas vider une colonne.
+- <code>GetCurrentUser</code> retourne <code>any</code> : faites l’assertion vers votre modèle utilisateur.
+
+Le schéma de <code>Base</code> est assaini : la contrainte PK reprend son nom par défaut et <code>deleted_at</code> est indexé. Le script <code>migrations/v1_to_v2.sql</code> cible les tables compatibles du schéma <code>public</code> — deux changements d’index, aucune donnée déplacée. La [procédure reproductible](../migrations/README.md) compare les dumps de schéma avant/après avec une création v2 et vérifie l’idempotence ainsi que la conservation des données. Examinez son périmètre avant de l’appliquer à une base existante.
+
+## 8 bis. Adapter les implémentations de fichiers
+
+<code>interfaces.FileInterface</code> ne contient plus que les méthodes fichier (elle n’embarque plus <code>BaseInterface</code>, et n’impose pas <code>Resource</code>) :
 
 ~~~go
-GetType() string
-SetType(string)
+GetName() string / SetName(string)
+GetPath() string / SetPath(string)
+GetExtension() string / SetExtension(string)
+GetContent() string / SetContent(string)
+GetType() string / SetType(string)
 GetFilePath(folder string) string
 ~~~
 
-Le type intégré <code>interfaces.File</code> contient aussi un champ <code>Type</code>.
+Le type intégré <code>interfaces.File</code> embarque <code>Base</code> et reste donc une <code>Resource</code> complète.
 
 Ne migrez pas le stockage sans prendre en compte les limites actuelles : contenu chargé en mémoire, erreurs d’écriture masquées et extension concaténée sans point au UUID. Voir le [guide des services](services.md#fichiers).
 
@@ -369,7 +384,7 @@ La v2 ajoute notamment :
 - la clé de filtre <code>orderBy</code> ;
 - <code>UpsertRelations</code>.
 
-Les lectures retournent désormais l’erreur GORM : <code>GetOneBy</code> (y compris <code>gorm.ErrRecordNotFound</code>), <code>GetAll</code>, <code>GetAllPaginated</code>, <code>HydrateRelation</code> et <code>HydrateManyToManyRelation</code>. L’ajout d’une valeur de retour ne casse pas les sites d’appel existants, mais vérifiez ces erreurs sur vos chemins critiques.
+Les lectures retournent l’erreur GORM : <code>GetOneBy</code> (y compris <code>gorm.ErrRecordNotFound</code>), <code>GetAll</code>, <code>GetAllPaginated</code>, <code>HydrateRelation</code> et <code>HydrateManyToManyRelation</code>. <code>GetOneBy</code> ne mute plus l’objet de l’appelant sur un échec. <code>Update</code> et <code>Delete</code> exigent la PK complète et refusent une ligne absente ; <code>UpsertRelations</code> refuse un identifiant public inconnu au lieu de créer.
 
 Pendant la migration :
 
@@ -380,15 +395,15 @@ Pendant la migration :
 
 ## 10. Réviser JWT et fichiers
 
-La v2 crée toujours des JWT HS256 avec <code>uuid</code> et <code>exp</code>. La validation restreint désormais explicitement l’algorithme à <code>HS256</code>, valide le format du claim <code>uuid</code> et exige un secret de 32 octets minimum, contrôlé dès le démarrage (warning hors production, refus de démarrer en mode <code>production</code>). Elle ne vérifie toujours ni issuer ni audience, et n’exige pas explicitement la présence de <code>exp</code> sur un token qu’elle n’a pas émis.
+La v2 crée des JWT HS256 avec <code>sub</code>, <code>exp</code>, <code>iss</code> et <code>aud</code>. Le claim <code>sub</code> porte l’identifiant public du modèle : une chaîne opaque et non vide. **Les tokens v1 portant seulement <code>uuid</code>, ainsi que les tokens sans la nouvelle politique de claims, doivent être réémis (re-login).** La validation exige HS256, une expiration valide, l’émetteur et l’audience configurés. Le secret doit contenir au moins 32 octets ; une politique incomplète empêche le démarrage en production et rend les services JWT inutilisables ailleurs.
 
 Avant mise en production :
 
 - configurez un secret aléatoire de 32 octets au moins, sous peine de refus de démarrage ;
-- imposez les claims attendus (issuer, audience, expiration obligatoire) dans une couche applicative ;
+- configurez <code>security.token_issuer</code>, <code>security.token_audience</code> et une durée <code>security.token_expires</code> strictement positive ;
 - vérifiez les types MIME et extensions des uploads ;
 - gérez les erreurs d’écriture de fichiers ;
-- ajoutez un TTL et une purge au suivi Redis des échecs de mot de passe.
+- adaptez le suivi Redis à son nouveau namespace et à sa fenêtre de rétention ; voir le [suivi des échecs](login-failures.md).
 
 ## 11. Valider la migration
 
@@ -414,10 +429,10 @@ Une migration n’est complète que lorsque le binaire et tous les plugins ont �
 
 ## Points à surveiller avant le tag stable
 
-- choix final du chemin de module v2 ;
+- choix du versionnement publié, le chemin actuel sans suffixe étant conservé pour la préversion ;
 - publication du CLI et de son workflow build/dev/start ;
 - validation stricte de la configuration ;
 - stratégie de portabilité en dehors des plugins Go ;
 - retours d’erreur DB et fichiers ;
-- durcissement JWT restant : issuer, audience et expiration obligatoire ;
+- stratégie applicative de révocation et de rotation des clés JWT ;
 - détection des collisions de routes.

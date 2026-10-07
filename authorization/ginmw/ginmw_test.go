@@ -80,13 +80,23 @@ func TestMiddlewareForAllowed(t *testing.T) {
 }
 
 func TestMiddlewareForUnauthenticated(t *testing.T) {
-	engine := newTestEngine(t)
+	var events []authorization.DecisionEvent
+	engine := newTestEngine(t, authorization.WithDecisionHook(func(_ context.Context, event authorization.DecisionEvent) {
+		events = append(events, event)
+	}))
 
 	recorder := serve(MiddlewareFor(engine, "article.read"), nil)
 	if recorder.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401", recorder.Code)
 	}
 	assertGenericBody(t, recorder)
+	if len(events) != 1 {
+		t.Fatalf("decision hook calls = %d, want exactly 1", len(events))
+	}
+	event := events[0]
+	if event.Kind != authorization.KindPermission || event.SubjectID != "" || event.Action != "article.read" || event.Allowed || event.Reason != authorization.ReasonUnauthenticated {
+		t.Errorf("anonymous decision event = %+v, want one unauthenticated permission refusal", event)
+	}
 }
 
 func TestMiddlewareForForbidden(t *testing.T) {
