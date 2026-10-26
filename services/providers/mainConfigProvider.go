@@ -13,7 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const mainConfigPath = "./configs/yogourt.yaml"
+const mainConfigPath = "./yogourt.yaml"
 
 const (
 	// DefaultMaxRequestBodyBytes is large enough for ordinary JSON and file
@@ -51,6 +51,7 @@ type MainConfig struct {
 	// a field nobody reads.
 	Paths struct {
 		RouteFolder string `yaml:"route_folder"`
+		ModelFolder string `yaml:"model_folder"`
 	} `yaml:"paths"`
 
 	Security struct {
