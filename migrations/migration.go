@@ -3,10 +3,9 @@ package migrations
 import (
 	"fmt"
 	"os"
-	"strings"
+	"sort"
 	"time"
 
-	"github.com/goyourt/yogourt/dairy"
 	"github.com/goyourt/yogourt/services/providers"
 	"gorm.io/gorm"
 )
@@ -30,7 +29,7 @@ func InitMigrations() error {
 	return db.AutoMigrate(&migrationRecord{})
 }
 
-func Migrate(Up []func(), Down []func(), args []string) {
+func Migrate(Up map[string]func(*gorm.DB), Down map[string]func(*gorm.DB), args []string) {
 	down := false
 	timestamp := ""
 	for _, arg := range args {
@@ -50,17 +49,12 @@ func Migrate(Up []func(), Down []func(), args []string) {
 	}
 
 	if timestamp != "" {
-		found := false
-		for _, migration := range migrations {
-			if len(timestamp) == 12 && strings.Contains(dairy.FuncName(migration), timestamp) {
-				executeMigration(migration, down)
-				found = true
-			}
-		}
+		migration, found := migrations[timestamp]
 		if !found {
 			fmt.Printf("migration %s not found\n", timestamp)
 			os.Exit(1)
 		}
+		executeMigration(migration, timestamp, down)
 		return
 	}
 
@@ -69,15 +63,18 @@ func Migrate(Up []func(), Down []func(), args []string) {
 		os.Exit(1)
 	}
 
-	for _, migration := range migrations {
-		executeMigration(migration, down)
+	timestamps := make([]string, 0, len(migrations))
+	for timestamp := range migrations {
+		timestamps = append(timestamps, timestamp)
+	}
+	sort.Strings(timestamps)
+
+	for _, timestamp := range timestamps {
+		executeMigration(migrations[timestamp], timestamp, down)
 	}
 }
 
-func executeMigration(migration func(), down bool) {
-	name := dairy.FuncName(migration)
-	timestamp := strings.TrimPrefix(strings.TrimPrefix(name, "Up"), "Down")
-
+func executeMigration(migration func(*gorm.DB), timestamp string, down bool) {
 	db, err := providers.GetDB()
 	if err != nil {
 		fmt.Printf("error while connecting database: %v\n", err)
@@ -96,7 +93,7 @@ func executeMigration(migration func(), down bool) {
 		return
 	}
 
-	migration()
+	migration(db)
 
 	var result *gorm.DB
 	if down {
