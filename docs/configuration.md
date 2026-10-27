@@ -231,6 +231,7 @@ et l'appel suivant retente la connexion. La connexion et le <code>PING</code> so
 | Champ | Type | Comportement actuel |
 | --- | --- | --- |
 | <code>paths.route_folder</code> | chaîne | Dossier du plan de routes chargé par <code>routing.Initialize</code> |
+| <code>paths.model_folder</code> | chaîne | Dossier où <code>yogourt-cli</code> génère les modèles et leur <code>registry.go</code> ; le runtime ne le lit pas |
 
 <code>paths.route_folder</code> est la seule source du dossier de routes :
 <code>routing.Initialize</code> ne prend pas de dossier en argument, parce que le
@@ -242,10 +243,10 @@ clé.
 Le dossier scanné ne change jamais l’URL publiée : le préfixe HTTP est réglé
 séparément par <code>server.base_path</code> ou <code>routing.WithPrefix</code>.
 
-<code>model_folder</code>, <code>project_name</code> et <code>main_file</code> ne sont plus
-des champs de la configuration : ils appartiennent au CLI v0.5 et le runtime ne
-les a jamais lus. Les écrire produit un avertissement (ci-dessous) ; les
-supprimer ne change rien au comportement du serveur.
+<code>project_name</code> et <code>main_file</code> ne sont plus des champs de la
+configuration : ils appartiennent au CLI v0.5 et le runtime ne les a jamais lus.
+Les écrire produit un avertissement (ci-dessous) ; les supprimer ne change rien
+au comportement du serveur.
 
 ### Clés sans effet
 
@@ -254,7 +255,7 @@ la v2, le chargement de la configuration les signale au lieu de les avaler en
 silence :
 
 <pre><code>⚠️  configs/yogourt.yaml: "paths.api_folder" was renamed to "paths.route_folder" — the value is ignored
-⚠️  configs/yogourt.yaml: "paths.model_folder" is not a runtime setting (only the v0.5 CLI reads it) — delete it
+⚠️  configs/yogourt.yaml: "paths.project_name" is not a runtime setting (only the v0.5 CLI reads it) — delete it
 ⚠️  configs/yogourt.yaml: unknown key "tpyo" — the value is ignored
 </code></pre>
 
@@ -266,10 +267,10 @@ Trois familles d’avertissements :
   <code>database.dbname</code> → <code>database.db</code> — dont le remplaçant est
   nommé dans le message ;
 - une clé <strong>retirée</strong> du contrat runtime :
-  <code>paths.model_folder</code>, <code>paths.project_name</code>,
-  <code>paths.main_file</code>.
+  <code>paths.project_name</code>, <code>paths.main_file</code>.
 
-Tous les champs que la configuration déclare encore sont lus par le framework :
+Tous les champs que la configuration déclare encore sont lus par le framework
+ou par <code>yogourt-cli</code> :
 il n’y a plus de clé « analysée mais ignorée ». <code>configs/files.yaml</code> passe
 par le même contrôle, mais seules les clés inconnues y sont signalées : les
 listes de clés renommées et retirées ne concernent que <code>yogourt.yaml</code>.

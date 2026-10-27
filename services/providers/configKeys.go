@@ -11,9 +11,9 @@ import (
 // removedMainConfigKeys lists the keys that no longer belong to the runtime
 // contract. They used to be parsed into a field nobody read, which made them
 // look like settings; every field MainConfig declares today is used by the
-// framework, so these are reported as leftovers to delete instead.
+// framework or by yogourt-cli, so these are reported as leftovers to delete
+// instead.
 var removedMainConfigKeys = map[string]string{
-	"paths.model_folder": "only the v0.5 CLI reads it",
 	"paths.project_name": "only the v0.5 CLI reads it",
 	"paths.main_file":    "only the v0.5 CLI reads it",
 }
