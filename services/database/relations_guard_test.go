@@ -42,3 +42,46 @@ func TestHydrateManyToManyRelationSkipsNilPointer(t *testing.T) {
 		t.Fatalf("a nil pointer has nothing to fill, got %v", err)
 	}
 }
+
+type guardPtrModel struct {
+	interfaces.Base
+	Tags *[]*guardTag `gorm:"many2many:guard_ptr_tag;"`
+}
+
+func TestHydrateManyToManyRelationPtrSkipsLoadedField(t *testing.T) {
+	loaded := &[]*guardTag{{}}
+	model := &guardPtrModel{Tags: loaded}
+
+	if err := HydrateManyToManyRelationPtr(model, "Tags", &model.Tags); err != nil {
+		t.Fatalf("a loaded field must be left alone, got %v", err)
+	}
+	if model.Tags != loaded {
+		t.Fatal("a loaded field must not be replaced")
+	}
+}
+
+func TestHydrateManyToManyRelationPtrSkipsNilAddress(t *testing.T) {
+	model := &guardPtrModel{}
+
+	if err := HydrateManyToManyRelationPtr[*guardTag](model, "Tags", nil); err != nil {
+		t.Fatalf("a nil address has nothing to fill, got %v", err)
+	}
+}
+
+// An unsaved object reaches the preload branch of HydrateManyToManyRelation
+// only through the database provider, which would kill the run: completing
+// this test proves the provider is never called.
+func TestHydrateManyToManyRelationPtrAllocatesUnsavedObject(t *testing.T) {
+	model := &guardPtrModel{}
+
+	if err := HydrateManyToManyRelationPtr(model, "Tags", &model.Tags); err != nil {
+		t.Fatalf("an unsaved object has nothing to load, got %v", err)
+	}
+	if model.Tags == nil {
+		t.Fatal("the field must be allocated so callers can dereference it")
+	}
+	*model.Tags = append(*model.Tags, &guardTag{})
+	if len(*model.Tags) != 1 {
+		t.Fatalf("expected the allocated field to accept appends, got %d items", len(*model.Tags))
+	}
+}

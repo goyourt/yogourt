@@ -56,7 +56,7 @@ Si le fichier a été généré par le CLI v0.5, remplacez <code>dbname</code> p
 <pre><code>⚠️  configs/yogourt.yaml: "paths.api_folder" was renamed to "paths.route_folder" — the value is ignored
 </code></pre>
 
-Depuis la v2, <code>paths.route_folder</code> n’est plus décoratif : c’est le dossier de routes chargé par <code>routing.Initialize</code>, et la seule source de ce dossier. En revanche <code>paths.model_folder</code>, <code>paths.project_name</code> et <code>paths.main_file</code> ont quitté le contrat runtime — le framework ne les a jamais lus. Vous pouvez les supprimer ; le démarrage le rappelle.
+Depuis la v2, <code>paths.route_folder</code> n’est plus décoratif : c’est le dossier de routes chargé par <code>routing.Initialize</code>, et la seule source de ce dossier. En revanche <code>paths.project_name</code> et <code>paths.main_file</code> ont quitté le contrat runtime — le framework ne les a jamais lus. Vous pouvez les supprimer ; le démarrage le rappelle. <code>paths.model_folder</code> reste une clé valide : le runtime ne la lit pas, mais <code>yogourt-cli</code> s’en sert pour générer les modèles.
 
 <strong>Rupture de compilation</strong> : <code>routing.Initialize</code> ne prend
 plus de dossier en argument. Déplacez celui de votre appel dans le fichier de
@@ -124,7 +124,7 @@ d’emporter le processus depuis la première d’entre elles. La connexion n’
 mémorisée qu’une fois ouverte, une base qui revient est reprise sans
 redémarrage.
 
-<pre><code>⚠️  configs/yogourt.yaml: "paths.model_folder" is not a runtime setting (only the v0.5 CLI reads it) — delete it
+<pre><code>⚠️  configs/yogourt.yaml: "paths.project_name" is not a runtime setting (only the v0.5 CLI reads it) — delete it
 </code></pre>
 
 Deux autres champs ont pris un sens : <code>database.type</code> est contrôlé (seul PostgreSQL est fourni, une autre valeur arrête le démarrage) et <code>server.base_path</code> règle le préfixe HTTP, jusque-là figé à <code>/api</code>.
@@ -149,7 +149,7 @@ Les applications qui contournaient le helper en concaténant elles-mêmes un
 schéma et un port doivent retirer ce contournement, sous peine d’obtenir une
 URL doublée.
 
-<strong>Rupture de compilation possible</strong> : le code qui lisait <code>cfg.Paths.ModelFolder</code>, <code>cfg.Paths.ProjectName</code> ou <code>cfg.Paths.MainFile</code> ne compile plus, et <code>cfg.Server.CORS</code> est désormais un <code>*bool</code> (l’absence de clé et <code>false</code> devaient cesser de se confondre).
+<strong>Rupture de compilation possible</strong> : le code qui lisait <code>cfg.Paths.ProjectName</code> ou <code>cfg.Paths.MainFile</code> ne compile plus, et <code>cfg.Server.CORS</code> est désormais un <code>*bool</code> (l’absence de clé et <code>false</code> devaient cesser de se confondre).
 
 Ajoutez une configuration CORS avec au moins une origine :
 

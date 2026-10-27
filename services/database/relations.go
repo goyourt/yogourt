@@ -186,6 +186,24 @@ func HydrateManyToManyRelation[T any](obj any, table string, relation *[]T) erro
 	return db.Preload(name).First(obj).Error
 }
 
+// HydrateManyToManyRelationPtr is HydrateManyToManyRelation for relation
+// fields declared as a pointer to a slice (Tags *[]*Tag). relation is the
+// address of that field: a nil pointer means "not loaded". The field is
+// allocated before anything else, so the caller can always dereference it,
+// even when hydration fails. An object without its full primary key has not
+// been persisted: it has nothing to load and never reaches the database.
+func HydrateManyToManyRelationPtr[T any](obj any, table string, relation **[]T) error {
+	if relation == nil || *relation != nil {
+		return nil
+	}
+	*relation = new([]T)
+	persisted, err := hasCompletePrimaryKey(obj)
+	if err != nil || !persisted {
+		return err
+	}
+	return HydrateManyToManyRelation(obj, table, *relation)
+}
+
 func validatedRelationName(db *gorm.DB, obj any, name string) (string, error) {
 	sch, err := parseSchema(db, obj)
 	if err != nil {

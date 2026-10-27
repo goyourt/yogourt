@@ -1,8 +1,10 @@
 package database
 
 import (
+	"context"
 	"fmt"
 	"reflect"
+	"sync"
 
 	"github.com/goyourt/yogourt/interfaces"
 	"gorm.io/gorm"
@@ -70,6 +72,32 @@ func requireCompletePrimaryKey(db *gorm.DB, obj any) error {
 		}
 	}
 	return nil
+}
+
+// detachedSchemas caches the schemas parsed by hasCompletePrimaryKey, which
+// must not open a connection to tell whether obj was persisted.
+var detachedSchemas sync.Map
+
+// hasCompletePrimaryKey reports whether obj carries its full primary key,
+// without touching the database provider.
+func hasCompletePrimaryKey(obj any) (bool, error) {
+	rv, err := structPointer(obj)
+	if err != nil {
+		return false, err
+	}
+	sch, err := schema.Parse(obj, &detachedSchemas, schema.NamingStrategy{})
+	if err != nil {
+		return false, err
+	}
+	if len(sch.PrimaryFields) == 0 {
+		return false, fmt.Errorf("%T has no primary key", obj)
+	}
+	for _, field := range sch.PrimaryFields {
+		if _, isZero := field.ValueOf(context.Background(), rv); isZero {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func copyPrimaryKeyFields(db *gorm.DB, from any, to any) error {
