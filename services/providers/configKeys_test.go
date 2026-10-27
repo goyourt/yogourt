@@ -175,6 +175,7 @@ database:
 paths:
   api_folder: "./api/"
   model_folder: "./models/"
+  project_name: "demo"
 tpyo: true
 `)
 
@@ -184,7 +185,7 @@ tpyo: true
 
 	for _, want := range []string{
 		`"paths.api_folder" was renamed to "paths.route_folder"`,
-		`"paths.model_folder" is not a runtime setting (only the v0.5 CLI reads it) — delete it`,
+		`"paths.project_name" is not a runtime setting (only the v0.5 CLI reads it) — delete it`,
 		`unknown key "tpyo"`,
 	} {
 		if !strings.Contains(logged, want) {
@@ -192,9 +193,9 @@ tpyo: true
 		}
 	}
 
-	// Every remaining key of the file is read by the framework: nothing else
-	// deserves a line.
-	for _, unwanted := range []string{"server.cors", "server.base_path", "server.port", "database.type", "database.db", "app_name"} {
+	// Every remaining key of the file is read by the framework or by
+	// yogourt-cli: nothing else deserves a line.
+	for _, unwanted := range []string{"server.cors", "server.base_path", "server.port", "database.type", "database.db", "app_name", "paths.model_folder"} {
 		if strings.Contains(logged, unwanted) {
 			t.Errorf("live key %q should not be warned about, got:\n%s", unwanted, logged)
 		}
