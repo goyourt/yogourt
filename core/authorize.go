@@ -2,22 +2,23 @@ package core
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/goyourt/yogourt/authorization"
-	"github.com/goyourt/yogourt/authorization/ginmw"
+	"github.com/goyourt/yogourt/dairy"
 )
 
 // routePermissionKey is the Gin context key carrying the permission declared
-// for the matched route method. It is written by the routing layer and
+// for the matched route method. It is written by the RBAC middleware and
 // consumed by Context.Authorize.
 const routePermissionKey = "yogourt.route_permission"
 
-// SetRoutePermission records the permission declared for the matched route
-// method. It is called by the framework when a route is registered with an
-// authorizer configured; applications should not need it.
-func SetRoutePermission(c *gin.Context, permission string) {
+// SetPermission records the permission declared for the matched route
+// method. It is called by the RBAC middleware (ginmw.MiddlewareFor);
+// applications should not need it.
+func SetPermission(c *gin.Context, permission string) {
 	c.Set(routePermissionKey, permission)
 }
 
@@ -58,7 +59,7 @@ func (c *Context) Can(action string, resource any) bool {
 func (c *Context) Authorize(resource any) bool {
 	permission, ok := c.routePermission()
 	if !ok || permission == authorization.Public {
-		ginmw.AbortDenied(c.Context, nil, "", authorization.ReasonMisconfigured)
+		dairy.InternalServerError(c.Context)
 
 		return false
 	}
@@ -71,7 +72,7 @@ func (c *Context) Authorize(resource any) bool {
 func (c *Context) AuthorizeAction(action string, resource any) bool {
 	engine, ok := authorization.Published()
 	if !ok {
-		ginmw.AbortDenied(c.Context, nil, authorization.Action(action), authorization.ReasonMisconfigured)
+		dairy.InternalServerError(c.Context)
 
 		return false
 	}
@@ -80,9 +81,32 @@ func (c *Context) AuthorizeAction(action string, resource any) bool {
 	if decision.Allowed {
 		return true
 	}
-	ginmw.AbortDenied(c.Context, engine, authorization.Action(action), decision.Reason)
+	AbortAfterReason(c.Context, engine, authorization.Action(action), decision.Reason)
 
 	return false
+}
+
+// AbortAfterReason maps a denied decision to its HTTP status and aborts the
+// request. Internal reasons never reach the response body: generic messages
+// only (D7). The 404 masking of denials follows the engine's NotFoundOnDeny
+// configuration for the action; a nil engine falls back to 403. It is shared
+// by the RBAC middleware and by the Context authorization helpers so both
+// layers answer identically (D8).
+func AbortAfterReason(c *gin.Context, engine *authorization.Engine, action authorization.Action, reason authorization.Reason) {
+	switch reason {
+	case authorization.ReasonUnauthenticated:
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+	case authorization.ReasonMissingPermission, authorization.ReasonPolicyDenied:
+		if engine != nil && engine.NotFoundOnDeny(action) {
+			c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "Resource not found"})
+		} else {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Forbidden"})
+		}
+	case authorization.ReasonProviderError, authorization.ReasonPolicyError:
+		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "Service unavailable"})
+	default:
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+	}
 }
 
 func (c *Context) decide(engine *authorization.Engine, action authorization.Action, resource any) authorization.Decision {

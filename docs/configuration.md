@@ -4,7 +4,7 @@ Ce guide décrit le contrat observé sur la préversion v2. Les chemins sont ré
 
 ## Fichier principal
 
-Le runtime lit exclusivement <code>./configs/yogourt.yaml</code>.
+Le runtime lit exclusivement <code>./yogourt.yaml</code>.
 
 ~~~yaml
 app_name: "example"
@@ -254,9 +254,9 @@ Toute clé absente des tableaux ci-dessus est ignorée par le parseur YAML. Depu
 la v2, le chargement de la configuration les signale au lieu de les avaler en
 silence :
 
-<pre><code>⚠️  configs/yogourt.yaml: "paths.api_folder" was renamed to "paths.route_folder" — the value is ignored
-⚠️  configs/yogourt.yaml: "paths.project_name" is not a runtime setting (only the v0.5 CLI reads it) — delete it
-⚠️  configs/yogourt.yaml: unknown key "tpyo" — the value is ignored
+<pre><code>⚠️  ./yogourt.yaml: "paths.api_folder" was renamed to "paths.route_folder" — the value is ignored
+⚠️  ./yogourt.yaml: "paths.project_name" is not a runtime setting (only the v0.5 CLI reads it) — delete it
+⚠️  ./yogourt.yaml: unknown key "tpyo" — the value is ignored
 </code></pre>
 
 Trois familles d’avertissements :
@@ -361,7 +361,7 @@ Les tailles sont exprimées en octets. Une catégorie hérite des valeurs global
 
 Définissez toujours <code>file_folder</code> et <code>max_file_size</code> au niveau global. Les services d’accès déréférencent ces valeurs et une configuration sans valeur de repli peut provoquer un panic.
 
-Le chargement dotenv est global et ne s’exécute qu’une fois. Dans le flux normal, <code>configs/yogourt.yaml</code> est chargé en premier : déclarez donc les fichiers d’environnement dans le fichier principal. Si <code>configs/files.yaml</code> est exceptionnellement la première configuration lue, il peut déclarer son propre <code>env_files</code> ; sinon le fournisseur recherche ceux du fichier principal.
+Le chargement dotenv est global et ne s’exécute qu’une fois. Dans le flux normal, <code>yogourt.yaml</code> est chargé en premier : déclarez donc les fichiers d’environnement dans le fichier principal. Si <code>configs/files.yaml</code> est exceptionnellement la première configuration lue, il peut déclarer son propre <code>env_files</code> ; sinon le fournisseur recherche ceux du fichier principal.
 
 ## Accès depuis Go
 
