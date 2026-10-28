@@ -1,7 +1,10 @@
 package interfaces
 
+import (
+	"path/filepath"
+)
+
 type FileInterface interface {
-	BaseInterface
 	GetName() string
 	SetName(name string)
 	GetPath() string
@@ -10,6 +13,9 @@ type FileInterface interface {
 	SetExtension(extension string)
 	GetContent() string
 	SetContent(content string)
+	GetType() string
+	SetType(newType string)
+	GetFilePath(folder string) string
 }
 
 type File struct {
@@ -17,8 +23,11 @@ type File struct {
 	Name      *string `json:"name"`
 	Path      *string `json:"-"`
 	Extension *string `json:"-"`
+	Type      *string `json:"-"`
 	Content   *string `gorm:"-" json:"-"`
 }
+
+var _ FileInterface = (*File)(nil)
 
 func (f *File) GetName() string {
 	if nil == f.Name {
@@ -74,4 +83,22 @@ func (f *File) SetContent(content string) {
 		f.Content = new(string)
 	}
 	*f.Content = content
+}
+
+func (f *File) GetType() string {
+	if nil == f.Type {
+		return ""
+	}
+	return *f.Type
+}
+
+func (f *File) SetType(newType string) {
+	if nil == f.Type {
+		f.Type = new(string)
+	}
+	*f.Type = newType
+}
+
+func (f *File) GetFilePath(folder string) string {
+	return filepath.Join(folder, f.GetPublicId()+f.GetExtension())
 }

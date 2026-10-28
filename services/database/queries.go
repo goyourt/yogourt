@@ -1,76 +1,317 @@
 package database
 
 import (
+	"errors"
+	"fmt"
+	"reflect"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/goyourt/yogourt/interfaces"
 	"github.com/goyourt/yogourt/services/providers"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type DataWriter struct {
-	CurrentUser interfaces.BaseInterface
+	db          *gorm.DB
+	CurrentUser any
 }
 
 func CreateDataWriter(c *gin.Context) DataWriter {
 	if c == nil {
-		return DataWriter{nil}
+		return DataWriter{}
 	}
+	return DataWriter{CurrentUser: providers.GetCurrentUser(c)}
+}
 
-	currentUser := providers.GetCurrentUser(c)
-
-	if currentUser == nil {
-		return DataWriter{nil}
+func (dw DataWriter) connection() (*gorm.DB, error) {
+	if dw.db != nil {
+		return dw.db, nil
 	}
-
-	return DataWriter{currentUser}
+	return providers.GetDB()
 }
 
-func GetAll[T interfaces.BaseInterface](objs *[]T, values map[string]any) {
-	GetAllPaginated(objs, values, 0, 0)
+func (dw DataWriter) withDB(db *gorm.DB) DataWriter {
+	return DataWriter{db: db, CurrentUser: dw.CurrentUser}
 }
 
-func GetAllPaginated[T interfaces.BaseInterface](objs *[]T, values map[string]any, page int, pageSize int) {
-	SearchQuery(values, objs, page, pageSize).Find(objs)
+func GetAll[T any](objs *[]T, values map[string]any) error {
+	return GetAllPaginated(objs, values, 0, 0)
 }
 
-func GetOneBy(obj interfaces.BaseInterface, values map[string]any) {
-	if obj.GetID() == 0 {
-		resetId(obj)
+func GetAllPaginated[T any](objs *[]T, values map[string]any, page int, pageSize int) error {
+	query, err := SearchQuery(objs, values, page, pageSize)
+	if err != nil {
+		return err
 	}
-	JoinTables(values, &obj).First(obj)
+	return query.Distinct().Find(objs).Error
 }
 
-func (dw DataWriter) Create(obj interfaces.BaseInterface) error {
-	resetId(obj)
-	obj.SetCreatedById(dw.CurrentUser)
-	obj.SetUpdatedById(dw.CurrentUser)
-	return providers.GetDB().Create(obj).Error
+// SearchQuery builds the paginated query GetAllPaginated runs, and is the
+// entry point for the applications refining it with the GORM API.
+func SearchQuery[T any](objs *[]T, values map[string]any, page int, pageSize int) (*gorm.DB, error) {
+	db, err := providers.GetDB()
+	if err != nil {
+		return nil, err
+	}
+	query, err := buildQuery(db, new(T), values)
+	if err != nil {
+		return nil, err
+	}
+	return Paginate(query, page, pageSize), nil
 }
 
-func (dw DataWriter) Update(obj interfaces.BaseInterface) error {
-	obj.SetUpdatedById(dw.CurrentUser)
-	obj.SetUpdatedAt(time.Now())
+// GetOneBy loads the first record matching values into obj. The query runs
+// against a fresh probe: on gorm.ErrRecordNotFound or any error, obj is left
+// intact.
+func GetOneBy(obj any, values map[string]any) error {
+	db, err := providers.GetDB()
+	if err != nil {
+		return err
+	}
+	return getOneBy(db, obj, values)
+}
 
-	if err := providers.GetDB().Model(obj).Where("uuid = ?", obj.GetUuid()).UpdateColumns(obj).Error; err != nil {
+// GetOneByIdentity loads one record by an exact identity value. The value is
+// always bound as data and cannot select Like, Or, IN, or ordering behavior.
+func GetOneByIdentity(obj any, column string, value string) error {
+	db, err := providers.GetDB()
+	if err != nil {
+		return err
+	}
+	return getOneByIdentity(db, obj, column, value)
+}
+
+func getOneBy(db *gorm.DB, obj any, values map[string]any) error {
+	rv, err := structPointer(obj)
+	if err != nil {
+		return err
+	}
+	probe := reflect.New(rv.Elem().Type())
+	query, err := buildQuery(db, probe.Interface(), values)
+	if err != nil {
+		return err
+	}
+	if err := query.First(probe.Interface()).Error; err != nil {
+		return err
+	}
+	rv.Elem().Set(probe.Elem())
+	return nil
+}
+
+func getOneByIdentity(db *gorm.DB, obj any, column string, value string) error {
+	rv, err := structPointer(obj)
+	if err != nil {
+		return err
+	}
+	probe := reflect.New(rv.Elem().Type())
+	query, err := buildIdentityQuery(db, probe.Interface(), column, value)
+	if err != nil {
+		return err
+	}
+	if err := query.First(probe.Interface()).Error; err != nil {
+		return err
+	}
+	rv.Elem().Set(probe.Elem())
+	return nil
+}
+
+func buildIdentityQuery(db *gorm.DB, model any, column string, value string) (*gorm.DB, error) {
+	query := db.Model(model)
+	if err := query.Statement.Parse(query.Statement.Model); err != nil {
+		return nil, err
+	}
+	field := query.Statement.Schema.LookUpField(column)
+	if field == nil || field.DBName == "" {
+		return nil, fmt.Errorf("unknown identity column %q on %s", column, query.Statement.Schema.Name)
+	}
+	identity := clause.Column{Table: query.Statement.Table, Name: field.DBName}
+	return query.Where(clause.Eq{Column: identity, Value: value}).Preload(clause.Associations), nil
+}
+
+func (dw DataWriter) Create(obj any) error {
+	if _, err := structPointer(obj); err != nil {
+		return err
+	}
+	if resetter, ok := capability[interfaces.GeneratedIdentityResetter](obj); ok {
+		resetter.ResetGeneratedIdentity()
+	}
+	if id, ok := actorId(dw.CurrentUser); ok {
+		if setter, ok := capability[interfaces.CreatedBySetter](obj); ok {
+			setter.SetCreatedBy(id)
+		}
+		if setter, ok := capability[interfaces.UpdatedBySetter](obj); ok {
+			setter.SetUpdatedBy(id)
+		}
+	}
+	db, err := dw.connection()
+	if err != nil {
+		return err
+	}
+	// Associations are never written implicitly: GORM's save-associations
+	// callbacks would insert non-nil relation fields — including rows carrying
+	// a client-chosen public id. Relations go through UpsertRelations.
+	return db.Omit(clause.Associations).Create(obj).Error
+}
+
+func (dw DataWriter) Update(obj any) error {
+	db, err := dw.connection()
+	if err != nil {
+		return err
+	}
+	if err := requireCompletePrimaryKey(db, obj); err != nil {
+		return err
+	}
+	if setter, ok := capability[interfaces.UpdatedAtSetter](obj); ok {
+		setter.SetUpdatedAt(time.Now())
+	}
+	if id, ok := actorId(dw.CurrentUser); ok {
+		if setter, ok := capability[interfaces.UpdatedBySetter](obj); ok {
+			setter.SetUpdatedBy(id)
+		}
+	}
+	// UpdateColumns(struct) only writes non-zero fields: Update patches, it
+	// cannot clear a column. Associations are omitted, see Create.
+	if err := db.Model(obj).Omit(clause.Associations).UpdateColumns(obj).Error; err != nil {
+		return err
+	}
+	// RowsAffected == 0 does not distinguish a no-op from a missing row: the
+	// reload by primary key settles it and returns the stored state.
+	return db.First(obj).Error
+}
+
+func (dw DataWriter) Upsert(obj any, values map[string]any) error {
+	rv, err := structPointer(obj)
+	if err != nil {
+		return err
+	}
+	db, err := dw.connection()
+	if err != nil {
+		return err
+	}
+	probe := reflect.New(rv.Elem().Type()).Interface()
+	switch err := getOneByExact(db, probe, values); {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return dw.Create(obj)
+	case err != nil:
+		return err
+	}
+	if err := copyPrimaryKeyFields(db, probe, obj); err != nil {
+		return err
+	}
+	return dw.Update(obj)
+}
+
+// getOneByExact is used by Upsert: its match key consists only of exact,
+// scalar columns on the model itself. Search operators and relations do not
+// define record identity.
+func getOneByExact(db *gorm.DB, obj any, values map[string]any) error {
+	rv, err := structPointer(obj)
+	if err != nil {
+		return err
+	}
+	probe := reflect.New(rv.Elem().Type())
+	if len(values) == 0 {
+		return errors.New("upsert requires at least one exact match column")
+	}
+	query := db.Model(probe.Interface())
+	if err := query.Statement.Parse(query.Statement.Model); err != nil {
+		return err
+	}
+	for column, value := range values {
+		if column == orderByPattern || strings.Contains(column, ".") {
+			return fmt.Errorf("upsert match column %q must be a model column", column)
+		}
+		if _, ok := value.(LikeOperator); ok {
+			return fmt.Errorf("upsert match column %q requires an exact value", column)
+		}
+		if _, ok := value.(OrOperator); ok {
+			return fmt.Errorf("upsert match column %q requires an exact value", column)
+		}
+		if _, ok := value.(AndOperator); ok {
+			return fmt.Errorf("upsert match column %q requires an exact value", column)
+		}
+		if _, ok := value.(clause.Expression); ok {
+			return fmt.Errorf("upsert match column %q requires a literal value", column)
+		}
+		if isSliceOrArray(value) {
+			return fmt.Errorf("upsert match column %q requires a scalar value", column)
+		}
+		field := query.Statement.Schema.LookUpField(column)
+		if field == nil || field.DBName == "" {
+			return fmt.Errorf("unknown upsert match column %q on %s", column, query.Statement.Schema.Name)
+		}
+		query = query.Where(clause.Eq{
+			Column: clause.Column{Table: query.Statement.Table, Name: field.DBName},
+			Value:  value,
+		})
+	}
+	if err := query.Preload(clause.Associations).First(probe.Interface()).Error; err != nil {
+		return err
+	}
+	rv.Elem().Set(probe.Elem())
+	return nil
+}
+
+func (dw DataWriter) Delete(obj any) error {
+	db, err := dw.connection()
+	if err != nil {
+		return err
+	}
+	if err := requireCompletePrimaryKey(db, obj); err != nil {
 		return err
 	}
 
-	return providers.GetDB().First(obj, "uuid = ?", obj.GetUuid()).Error
+	auditor, hasAuditor := capability[interfaces.DeleteAuditor](obj)
+	id, hasActor := actorId(dw.CurrentUser)
+	if !hasAuditor || !hasActor {
+		return deleteOne(db, obj)
+	}
+
+	column, value := auditor.DeleteAuditAssignment(id)
+	if err := requireSchemaColumn(db, obj, column); err != nil {
+		return err
+	}
+	// One transaction: a row can never end up deleted without its author, nor
+	// attributed to an author without being deleted.
+	return db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(obj).Omit(clause.Associations).UpdateColumn(column, value)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		return deleteOne(tx, obj)
+	})
 }
 
-func (dw DataWriter) Delete(obj interfaces.BaseInterface) error {
-	obj.SetDeletedById(dw.CurrentUser)
-	return providers.GetDB().Delete(obj).Error
+func HardDelete(obj any) error {
+	db, err := providers.GetDB()
+	if err != nil {
+		return err
+	}
+	if err := requireCompletePrimaryKey(db, obj); err != nil {
+		return err
+	}
+	return hardDelete(db, obj)
 }
 
-func HardDelete(obj interfaces.BaseInterface) error {
-	return providers.GetDB().Unscoped().Delete(obj).Error
+func hardDelete(db *gorm.DB, obj any) error {
+	return deleteOne(db.Unscoped(), obj)
 }
 
-func SearchQuery[T interfaces.BaseInterface](values map[string]any, objs *[]T, page int, pageSize int) *gorm.DB {
-	return Paginate(JoinTables(values, new(T)), page, pageSize)
+func deleteOne(db *gorm.DB, obj any) error {
+	result := db.Delete(obj)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func Paginate(query *gorm.DB, page int, pageSize int) *gorm.DB {
@@ -79,8 +320,4 @@ func Paginate(query *gorm.DB, page int, pageSize int) *gorm.DB {
 	}
 	offset := (page - 1) * pageSize
 	return query.Limit(pageSize).Offset(offset)
-}
-
-func Like(s string) string {
-	return likePatern + "%" + s + "%"
 }

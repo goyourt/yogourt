@@ -1,0 +1,445 @@
+# Services
+
+Ce guide présente les API publiques observées sur la préversion v2. Les signatures peuvent encore évoluer avant le tag stable.
+
+## Fournisseurs
+
+Les fournisseurs sont chargés à la première utilisation et conservés dans des singletons :
+
+~~~go
+cfg := providers.GetMainConfig()
+db, err := providers.GetDB()
+cache, err := providers.GetCache()
+files := providers.GetFileConfig()
+~~~
+
+Conséquences :
+
+- la configuration n’est pas rechargée pendant l’exécution ;
+- une erreur de fichier de configuration provoque un panic ;
+- une erreur d’ouverture PostgreSQL est retournée par <code>GetDB</code> et ne termine plus le processus ; l’échec n’est pas mémorisé, l’appel suivant retente la connexion ;
+- une erreur de connexion Redis est renvoyée à l’appelant, et n’est pas mémorisée : l’appel suivant retente ;
+- les dépendances globales rendent les tests isolés plus difficiles.
+
+Voir le [guide de configuration](configuration.md) pour les chemins et champs exacts.
+
+## Modèles
+
+Aucune interface n’est requise pour le CRUD : les helpers acceptent n’importe quel modèle GORM. La seule interface du framework est <code>interfaces.Resource</code> (<code>GetPublicId</code>, <code>PublicIdColumn</code>), exigée uniquement là où une identité publique est constitutive de l’opération : hydratation de <code>HandleRequest</code>, <code>Authenticate</code>, <code>UpsertRelations</code> et sujet d’autorisation.
+
+Tout le reste est une capacité optionnelle, détectée par assertion de type :
+
+- <code>GeneratedIdentityResetter</code> : l’identité (PK, uuid à default SQL) est générée, <code>Create</code> la remet à zéro — un payload ne peut pas la choisir ; une PK applicative ne l’implémente pas et n’est jamais touchée ;
+- <code>CreatedBySetter</code>, <code>UpdatedBySetter</code>, <code>UpdatedAtSetter</code> : audit d’écriture ;
+- <code>DeleteAuditor</code> : audit de suppression (colonne + valeur à écrire) ;
+- <code>AuditActorProvider</code> : implémentée par l’utilisateur courant pour fournir l’acteur d’audit (entier).
+
+Le kit de briques embarquables compose ces capacités à la carte : <code>WithID</code>, <code>WithUuid</code>, <code>WithUuidPK</code>, <code>WithTimestamps</code>, <code>WithAudit</code>, <code>WithSoftDelete</code>. <code>interfaces.Base</code> reste le préréglage complet :
+
+~~~go
+package models
+
+import "github.com/goyourt/yogourt/interfaces"
+
+// Tout : PK entière, uuid public, timestamps, audit, soft delete.
+type User struct {
+	interfaces.Base
+	Email string `gorm:"uniqueIndex;not null" json:"email"`
+	Name  string `json:"name"`
+}
+
+// À la carte : table technique, ni uuid, ni audit, ni soft delete.
+type ImportLog struct {
+	interfaces.WithID
+	interfaces.WithTimestamps
+	Payload string `json:"payload"`
+}
+
+// 100 % maison : PK applicative, colonne publique déclarée.
+type Customer struct {
+	PublicId *string `gorm:"primaryKey" json:"id"` // "cus_a8x3k...", posé par l'app
+	Name     string  `json:"name"`
+}
+
+func (c *Customer) GetPublicId() string {
+	if c.PublicId == nil {
+		return ""
+	}
+	return *c.PublicId
+}
+func (c *Customer) PublicIdColumn() string { return "public_id" }
+~~~
+
+Les champs ID, UUID et audit des briques sont stockés via des pointeurs.
+
+## Lectures en base
+
+### Un objet
+
+~~~go
+user := &models.User{}
+err := database.GetOneBy(user, map[string]any{
+	"uuid": userUUID,
+})
+if errors.Is(err, gorm.ErrRecordNotFound) {
+	// Introuvable.
+} else if err != nil {
+	// Panne SQL/réseau : distincte d'un « non trouvé ».
+}
+~~~
+
+<code>GetOneBy</code> interroge une sonde interne et ne copie le résultat dans l’objet qu’en cas de succès : sur <code>ErrRecordNotFound</code> ou panne, l’objet de l’appelant reste intact.
+
+### Une collection
+
+Utilisez une slice de pointeurs :
+
+~~~go
+var users []*models.User
+
+err := database.GetAll(&users, map[string]any{
+	"name":   database.Like("alb"),
+	"status": []string{"active", "invited"},
+})
+~~~
+
+Pagination :
+
+~~~go
+var users []*models.User
+err := database.GetAllPaginated(&users, filters, 1, 25)
+~~~
+
+Une page ou une taille inférieure à 1 désactive la pagination.
+
+### Filtres et relations
+
+- une clé simple cible une colonne du modèle principal ;
+- une clé comme <code>profile.city</code> joint et précharge la relation <code>Profile</code> ;
+- une slice produit une condition <code>IN</code> ;
+- <code>database.Like("text")</code> produit une recherche <code>LIKE %text%</code> ;
+- <code>database.Or(value)</code> place le filtre dans un groupe d’alternatives, combiné avec <code>AND</code> aux filtres ordinaires ;
+- <code>database.And(value)</code> rend explicite cette conjonction : le filtre reste hors du groupe <code>Or</code>, comme une valeur ordinaire ;
+- la clé spéciale <code>orderBy</code> accepte un <code>database.OrderBy(colonne, direction)</code> ou une slice de <code>database.Ordering</code>, avec <code>database.Ascending</code> ou <code>database.Descending</code> comme direction.
+
+Les noms de colonnes et de relations sont validés contre le schéma GORM. Les
+chaînes ordinaires restent des valeurs littérales et les expressions SQL brutes
+de tri sont refusées. Voir les [filtres typés](query-filters.md).
+
+N’utilisez jamais directement des noms de colonne, relation ou ordre provenant d’une requête HTTP. Ces valeurs participent à la construction SQL et doivent venir d’une liste applicative fermée.
+
+Les combinaisons complexes avec <code>Or</code> sont également fragiles, car une map Go n’a pas d’ordre stable. Préférez <code>database.SearchQuery</code> puis l’API GORM pour les requêtes avancées, en contrôlant explicitement les entrées :
+
+~~~go
+var users []*models.User
+
+query, err := database.SearchQuery(&users, map[string]any{"status": "active"}, 1, 25)
+if err != nil {
+	// Base injoignable : il n’y a pas de requête à affiner.
+	return err
+}
+
+err = query.
+	Where("created_at >= ?", since).
+	Find(&users).
+	Error
+~~~
+
+<code>GetOneBy</code>, <code>GetAll</code> et <code>GetAllPaginated</code> retournent l’erreur GORM (<code>gorm.ErrRecordNotFound</code> inclus pour <code>GetOneBy</code>) : une panne SQL n’est pas confondue avec un résultat vide. <code>SearchQuery</code> reste la porte d’entrée pour les requêtes GORM avancées ; elle retourne <code>(*gorm.DB, error)</code>, l’erreur étant celle de la connexion : tant qu’aucune connexion n’existe, il n’y a pas de <code>*gorm.DB</code> auquel accrocher l’échec.
+
+## Écritures en base
+
+Créez un writer à partir du contexte Gin pour renseigner les champs d’audit :
+
+~~~go
+writer := database.CreateDataWriter(c)
+
+user := &models.User{
+	Email: "dupont@example.com",
+	Name:  "Dupont",
+}
+
+if err := writer.Create(user); err != nil {
+	// Répondre à l’erreur.
+}
+~~~
+
+Si le contexte est nil ou ne contient aucun utilisateur authentifié, l’écriture reste possible mais les champs d’audit utilisateur ne sont pas renseignés.
+
+API disponible :
+
+~~~go
+err := writer.Create(user)
+err = writer.Update(user)
+err = writer.Upsert(user, map[string]any{"uuid": userUUID})
+err = writer.Delete(user)
+err = database.HardDelete(user)
+~~~
+
+- <code>Create</code> remet l’identité générée à zéro si le modèle implémente <code>GeneratedIdentityResetter</code> (une PK applicative n’est jamais touchée), puis crée la ligne ;
+- <code>Update</code> exige la PK complète, cible la ligne par sa clé primaire et n’écrit que les champs non nuls (patch : il ne peut pas vider une colonne), puis recharge l’objet — le rechargement départage un update sans effet d’une ligne absente ;
+- <code>Upsert</code> sonde d’abord avec les filtres fournis dans une instance interne (l’objet de l’appelant n’est jamais dégradé), puis crée ou copie la PK trouvée avant de mettre à jour ;
+- <code>Delete</code> supprime — en douce si le modèle porte <code>gorm.DeletedAt</code>, définitivement sinon — et refuse une ligne absente ;
+- <code>HardDelete</code> supprime définitivement.
+
+L’audit ne s’écrit que si les deux parties optent : le modèle via ses capacités (<code>CreatedBySetter</code>, <code>UpdatedBySetter</code>, <code>DeleteAuditor</code>) et l’utilisateur courant via <code>AuditActorProvider</code> — un acteur d’identifiant 0 est refusé. <code>SetUpdatedAt</code> est appelé à chaque <code>Update</code>, acteur authentifié ou non.
+
+Aucune écriture du <code>DataWriter</code> ne persiste les associations GORM implicitement (<code>Omit(clause.Associations)</code>) : un champ relation non nil sur l’objet n’est jamais inséré en effet de bord. Les relations imbriquées passent par <code>UpsertRelations</code>.
+
+Quand le modèle implémente <code>DeleteAuditor</code> et qu’un acteur est présent, <code>Delete</code> écrit deux instructions dans une seule transaction, chacune devant toucher exactement une ligne : la colonne d’audit retournée par <code>DeleteAuditAssignment</code> (validée contre le schéma GORM), puis la suppression douce. Une ligne ne peut donc pas être supprimée sans auteur, ni attribuée sans être supprimée.
+
+<code>Upsert</code> distingue les deux échecs de sa lecture : seule l’absence de ligne (<code>gorm.ErrRecordNotFound</code>) mène à un <code>Create</code>, toute autre erreur est retournée sans écriture. <code>Upsert</code> est un « lookup puis write », pas un <code>INSERT … ON CONFLICT</code> atomique : deux appels concurrents peuvent produire une violation d’unicité, qui est propagée.
+
+Ces méthodes ne démarrent pas automatiquement une transaction commune. Dans un callback <code>Transaction</code>, utilisez directement le <code>*gorm.DB</code> reçu :
+
+~~~go
+db, err := providers.GetDB()
+if err != nil {
+	return err
+}
+
+err = db.Transaction(func(tx *gorm.DB) error {
+	return tx.Create(user).Error
+})
+~~~
+
+<code>DataWriter</code> continue d’appeler le provider global ; ses méthodes ne sont pas automatiquement rattachées à <code>tx</code>.
+
+## Relations
+
+Les helpers disponibles sont :
+
+~~~go
+err := database.HydrateRelation(user, "Profile", user.Profile)
+err = database.UpsertRelations(c, user, []string{"Profile"})
+~~~
+
+<code>HydrateRelation</code> et <code>HydrateManyToManyRelation</code> retournent l’erreur GORM ; les sites d’appel qui l’ignorent continuent de compiler.
+
+<code>UpsertRelations</code> recherche des méthodes <code>GetRelation</code> et <code>SetRelation</code> par réflexion, prévalidées avant la première écriture, et exécute tous les upserts dans une transaction. Chaque relation doit implémenter <code>interfaces.Resource</code>. Identité publique vide : création ; identité présente et connue : mise à jour ; identité présente mais inconnue : erreur — un payload HTTP ne peut jamais créer une entité avec un identifiant choisi par le client. L’upsert many-to-many n’est pas pris en charge.
+
+<code>HydrateManyToManyRelation</code> s'applique aux champs many-to-many déclarés comme pointeur vers une slice (<code>Tags *[]*Tag</code>) et attend l'adresse de ce champ (<code>&s.Tags</code>). Un pointeur nil signifie « non chargée » : le champ est alloué puis la relation est préchargée ; un champ déjà alloué — même vide — est laissé tel quel. Le champ est alloué avant tout accès à la base, l'appelant peut donc toujours le déréférencer, même en cas d'erreur. Un objet sans clé primaire complète n'a pas été persisté : rien n'est chargé et la base n'est pas sollicitée.
+
+## Authentification
+
+### Middleware
+
+<code>services.Authenticate</code> valide un token Bearer, charge l’utilisateur (une <code>interfaces.Resource</code>) par le claim <code>sub</code> — une chaîne opaque, jamais validée en format — et le place dans le contexte.
+
+~~~go
+func authenticate(c *gin.Context) {
+	services.Authenticate(c, &models.User{})
+	if c.IsAborted() {
+		return
+	}
+	c.Next()
+}
+~~~
+
+Le header doit avoir exactement la forme :
+
+~~~text
+Authorization: Bearer <token>
+~~~
+
+Un header absent ou mal formé est refusé avec un corps générique, comme le reste de la chaîne d’autorisation : <code>401</code> et <code>{"error":"Unauthorized"}</code>. La raison interne reste côté serveur, dans les logs. Il en va de même d’un token invalide, d’un claim <code>sub</code> absent, vide ou non textuel et d’un token valide dont le sujet n’a aucune ligne en base : ces quatre cas renvoient strictement la même réponse. Une panne de base pendant la recherche de l’utilisateur, elle, répond <code>503</code> : une indisponibilité n’est jamais maquillée en refus d’authentification.
+
+Récupération de l’utilisateur :
+
+~~~go
+current := providers.GetCurrentUser(c)
+user, ok := current.(*models.User)
+if !ok {
+	// Aucun utilisateur du type attendu.
+}
+~~~
+
+### Tokens
+
+~~~go
+token, err := services.CreateToken(user.GetPublicId())
+~~~
+
+Les tokens créés utilisent HS256 et contiennent :
+
+- <code>sub</code> (l’identifiant public du modèle, chaîne opaque) ;
+- <code>exp</code>, calculé à partir de <code>security.token_expires</code> en minutes.
+
+Les helpers de plus bas niveau sont également publics :
+
+~~~go
+raw, err := services.GetRequestToken(c)
+parsed, err := services.ValidToken(raw)
+subject, err := services.GetStringClaim(parsed, "sub")
+~~~
+
+Le secret de signature est validé : <code>services.ValidateSecretKey</code> refuse un secret vide ou de moins de 32 octets, et <code>CreateToken</code> comme <code>ValidToken</code> échouent alors sans produire ni accepter de token. <code>ValidToken</code> fixe aussi explicitement l’algorithme accepté (<code>HS256</code>), ce qui ferme la substitution d’algorithme. Le démarrage signale le problème avant la première requête : hors production un secret vide ou trop court n’est que journalisé en warning, en mode <code>production</code> il empêche le démarrage.
+
+La validation exige aussi <code>exp</code>, <code>iss</code> et <code>aud</code>.
+Configurez <code>security.token_issuer</code> et
+<code>security.token_audience</code>, ainsi qu’une durée
+<code>security.token_expires</code> strictement positive. Les tokens émis avant
+cette politique doivent être renouvelés. Voir la [politique JWT](auth-policy.md).
+La révocation et la rotation des clés restent à organiser dans l’application.
+
+## Mots de passe
+
+~~~go
+if !services.IsPasswordValid(password) {
+	// Politique définie dans yogourt.yaml.
+}
+
+hash, err := services.GetHashedPassword(password)
+
+err = services.CheckPassword(hash, password)
+~~~
+
+<code>IsPasswordValid</code> vérifie la politique de complexité, pas un mot de passe existant. <code>GetHashedPassword</code> hache, <code>CheckPassword</code> compare : une application n’a donc pas à dépendre de bcrypt elle-même.
+
+Les contrôles sont appliqués dans cet ordre, chacun selon le champ de <code>security</code> qui le commande :
+
+| Champ | Ce qu’il exige |
+| --- | --- |
+| — | un mot de passe non vide, toujours |
+| <code>password_minimum_length</code> | <code>len(pwd)</code> au moins égal à la valeur — des octets, pas des runes |
+| <code>password_number_required</code> | au moins un chiffre Unicode (<code>unicode.IsDigit</code>) |
+| <code>password_special_char_required</code> | au moins une ponctuation ou un symbole Unicode |
+| <code>password_upper_case_required</code> | au moins une majuscule Unicode, accents compris |
+| <code>password_lower_case_required</code> | au moins une minuscule Unicode, accents compris |
+
+Les drapeaux sont indépendants et cumulatifs ; à <code>false</code> ou absents, le contrôle n’a pas lieu. Sans aucune clé, seule la chaîne vide est refusée : <code>"a"</code> est valide. Rien dans le framework n’appelle <code>IsPasswordValid</code> — c’est à la route d’inscription ou de changement de mot de passe de le faire.
+
+<code>GetHashedPassword</code> utilise bcrypt. Le coût par défaut est 12 lorsque <code>security.hash_cost</code> vaut 0. <code>CheckPassword</code> retourne <code>nil</code> quand le mot de passe correspond au hash.
+
+L’erreur retournée par <code>CheckPassword</code> ne doit **jamais** être renvoyée au client, même reformulée : elle distingue un mot de passe faux (<code>bcrypt.ErrMismatchedHashAndPassword</code>) d’un hash malformé, tronqué ou de version inconnue (<code>bcrypt.ErrHashTooShort</code>, <code>bcrypt.HashVersionTooNewError</code>…). Cette différence indique à un attaquant si le compte existe et comment son identifiant est stocké. Journalisez-la si besoin, et répondez un message générique unique :
+
+Préparez au démarrage un <code>dummyPasswordHash</code> avec
+<code>GetHashedPassword</code>, au même coût que les mots de passe stockés.
+Le chemin « utilisateur inconnu » effectue ainsi aussi une comparaison bcrypt :
+
+~~~go
+var user models.User
+lookupErr := database.GetOneBy(&user, map[string]any{"username": req.Username})
+if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+	routing.RespondServiceUnavailable(c)
+	return
+}
+
+hash := dummyPasswordHash
+if lookupErr == nil {
+	hash = user.Password
+}
+passwordErr := services.CheckPassword(hash, req.Password)
+if lookupErr != nil || passwordErr != nil {
+	routing.RespondAndAbort(c, http.StatusUnauthorized, "Invalid credentials")
+	return
+}
+~~~
+
+Suivi Redis des échecs :
+
+~~~go
+err := services.SavePasswordFailure(username)
+count, err := services.GetPasswordFailureCount(username)
+~~~
+
+Les deux appels remontent l’erreur de <code>GetCache()</code> si Redis est injoignable.
+Chaque échec possède un événement distinct. Redis supprime les événements hors
+de la fenêtre de 24 heures et applique un TTL au compteur. Utilisez
+<code>RecordPasswordFailure(ctx, username)</code> pour enregistrer et obtenir
+le total dans une même opération atomique, ou
+<code>GetPasswordFailureCountContext(ctx, username)</code> pour lire avec le
+contexte de la requête. Le seuil de verrouillage reste une décision applicative.
+Voir le [suivi des échecs](login-failures.md) pour le namespace et la transition
+depuis les anciennes clés.
+
+## Fichiers
+
+La configuration est décrite dans <code>configs/files.yaml</code>. Lecture d’un upload multipart :
+
+~~~go
+uploaded, err := services.ReadUploadedFile(c, "avatar", "avatars")
+if err != nil {
+	routing.RespondAndAbort(c, 422, err.Error())
+	return
+}
+~~~
+
+Le helper :
+
+- applique la taille maximale configurée ;
+- refuse un fichier vide ;
+- normalise le nom fourni par le client ;
+- crée le dossier configuré ;
+- place le contenu en mémoire dans un <code>interfaces.File</code>.
+
+L’API actuelle n’offre pas de transaction fiable entre les métadonnées et le disque. Si elle doit être utilisée malgré cette limite, le chemin calculé par <code>SaveFile</code> doit être repersisté explicitement :
+
+~~~go
+writer := database.CreateDataWriter(c)
+if err := writer.Create(uploaded); err != nil {
+	routing.RespondAndAbort(c, 500, "unable to persist file metadata")
+	return
+}
+
+services.SaveFile(uploaded)
+if err := writer.Update(uploaded); err != nil {
+	routing.RespondAndAbort(c, 500, "unable to update file metadata")
+	return
+}
+~~~
+
+Cette séquence n’est pas atomique et <code>SaveFile</code> ne permet pas de savoir si l’écriture a réussi. Pour un flux critique, fournissez une couche de stockage applicative qui retourne les erreurs avant de valider les métadonnées.
+
+Autres fonctions :
+
+~~~go
+content, err := services.ReadFile(file)
+services.GenerateFile(path, content)
+services.CreateFolder(path)
+serialized, err := services.SerializeFile(multipartFile)
+~~~
+
+Limites actuelles :
+
+- les uploads sont chargés entièrement en mémoire ;
+- aucun MIME type ni extension autorisée n’est validé ;
+- <code>SaveFile</code>, <code>GenerateFile</code> et <code>CreateFolder</code> ne retournent pas leurs erreurs ;
+- l’extension perd son point avant d’être concaténée à l’UUID, ce qui produit actuellement un nom comme <code>uuidpng</code> ;
+- appeler <code>SaveFile</code> avant l’attribution d’un UUID peut provoquer des collisions ;
+- le stockage est local et n’offre pas d’écriture atomique.
+
+Ce service ne doit pas être considéré comme un stockage de fichiers durci tant que ces points ne sont pas corrigés.
+
+## URL de base
+
+~~~go
+baseURL := services.GetBaseUrl()
+~~~
+
+Le résultat porte toujours un schéma, et jamais de slash final.
+
+<code>server.base_url</code> est prioritaire quand il est renseigné : c’est la
+seule valeur qui décrit une adresse publique que le processus ne peut pas
+deviner — reverse proxy, terminaison TLS, port de conteneur remappé. Une
+valeur écrite sans schéma est servie en <code>http</code>.
+
+Sans <code>server.base_url</code>, l’URL est reconstruite depuis l’adresse
+d’écoute, <code>server.host</code> et <code>server.port</code> :
+
+| <code>server.host</code> | <code>server.port</code> | <code>GetBaseUrl()</code> |
+| --- | --- | --- |
+| vide | <code>8080</code> | <code>http://localhost:8080</code> |
+| <code>0.0.0.0</code> ou <code>::</code> | <code>8080</code> | <code>http://localhost:8080</code> |
+| <code>127.0.0.1</code> | <code>8080</code> | <code>http://127.0.0.1:8080</code> |
+| <code>::1</code> | <code>8080</code> | <code>http://[::1]:8080</code> |
+
+Un hôte vide ou non spécifié devient <code>localhost</code> : <code>0.0.0.0</code>
+demande au socket d’écouter toutes les interfaces et n’est pas une adresse
+qu’un client peut composer.
+
+## Limites transverses
+
+- les providers globaux ne prennent pas de <code>context.Context</code> ;
+- les échecs de configuration utilisent panic ou <code>log.Fatal</code> ;
+- les comportements de sécurité, de stockage et de concurrence doivent être renforcés avant un usage critique.

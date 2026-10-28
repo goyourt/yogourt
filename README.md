@@ -1,90 +1,222 @@
 # Yogourt
 
-## Installation du CLI
+Yogourt est un framework Go pour construire des API avec Gin, un routage basé sur le système de fichiers, GORM, PostgreSQL, Redis et des services d’authentification et de fichiers.
 
-Pour installer le CLI de Yogourt globalement sur votre machine:
+> [!WARNING]
+> Le chantier v2 est en préversion sur la branche <code>feature/v2</code>. Le chemin <code>github.com/goyourt/yogourt</code> est conservé sans suffixe. Pour tester ces changements incompatibles avec la v1, épinglez un commit précis ; n’utilisez pas <code>@latest</code>. Le versionnement de publication reste à décider : un tag Go <code>v2.x</code> exige un chemin de module <code>/v2</code>. Le CLI stable v0.5 n’est pas compatible avec cette organisation.
 
-```sh
-go install github.com/goyourt/yogourt-cli@latest
-```
+## Documentation
 
-Cela installera le binaire dans votre `$GOPATH/bin` (ou `$GOBIN` si défini). Assurez-vous que ce dossier est dans votre `PATH` pour pouvoir utiliser la commande depuis n'importe où.
+| Guide | Contenu |
+| --- | --- |
+| [Configuration](docs/configuration.md) | Fichiers YAML, variables d’environnement et limites runtime |
+| [Routage](docs/routing.md) | Routes fichiers, handlers, paramètres, middlewares et plugins |
+| [Services](docs/services.md) | Modèles, base de données, authentification, mots de passe et fichiers |
+| [Autorisation](docs/authorization.md) | RBAC, ABAC, permissions par route, scopes et statuts HTTP |
+| [Migrations](docs/migrations.md) | Commandes CLI, table de suivi et écriture des migrations SQL |
+| [Migration vers la v2](docs/migration-v2.md) | Changements incompatibles et checklist de migration |
+| [Suivi de sécurité](docs/security-remediation-2026-09-12.md) | Correctifs, commits et validations de septembre 2026 |
 
-## Utilisation
+## Prérequis
 
-Après installation, vous pouvez lancer le CLI avec:
+- Go 1.26.8 minimum, avec la même toolchain pour le binaire et ses plugins ;
+- macOS, Linux ou FreeBSD pour charger les plugins Go ;
+- PostgreSQL pour les services de base de données ;
+- Redis pour le cache et le suivi des échecs de mot de passe.
 
-```sh
-yogourt
-```
+Le binaire principal et tous les plugins doivent être compilés avec exactement la même version de Go, les mêmes dépendances, les mêmes tags et les mêmes options de build. Consultez les [contraintes du paquet standard <code>plugin</code>](https://pkg.go.dev/plugin).
 
-ou selon le nom du binaire généré (par défaut, le nom du dossier `cli`).
+## Démarrage minimal
 
-Pour afficher l'aide:
+Cette procédure suppose que l’application dépend déjà d’une révision v2 épinglée.
 
-```sh
-yogourt --help
-```
+### 1. Créer l’arborescence
 
-## Features
+~~~text
+.
+├── api/
+│   └── health/
+│       └── route.go
+├── middleware/
+│   └── middleware.go
+├── .yogourt/
+├── main.go
+└── yogourt.yaml
+~~~
 
-### Yogourt init
+Le dossier <code>.yogourt</code> contient des artefacts compilés et ne doit normalement pas être versionné. Ajoutez <code>.yogourt/</code> au <code>.gitignore</code> de l’application.
 
-When the project is initialized, many files are generated for you:
+### 2. Configurer le runtime
 
-Before anything, you should run 
-```sh
-go mod tidy
-```
+Créez <code>yogourt.yaml</code> :
 
-#### Config File
+~~~yaml
+app_name: "example"
+version: "2.0.0"
+mode: "development"
 
-A config file `config.yaml` is generated at the root of the project with default values.
-Use this file to configure your app (database, server port, etc).
+server:
+  port: 8080
 
-#### Docker Compose
+paths:
+  route_folder: "api"
 
-A `docker-compose.yml` file is generated at the root of the project with multiple services.
-- Database (PostgreSQL)
-- Redis (Cache database)
-- Volumes
+cors:
+  allowed_origins:
+    - "http://localhost:3000"
+  allowed_methods:
+    - GET
+    - POST
+    - PUT
+    - PATCH
+    - DELETE
+    - OPTIONS
+  allowed_headers:
+    - Origin
+    - Content-Type
+    - Authorization
+~~~
 
-To use your Yogourt app, you need to start these containers with:
-```sh
-docker-compose up -d
-```
+Sans origine explicite et sans <code>allow_all_origins: true</code>, aucun middleware CORS n’est installé : les requêtes du navigateur depuis une autre origine ne sont pas autorisées. Voir la [configuration CORS](docs/configuration.md#cors).
 
-otherwise, you need to configure your own database and cache and pass the information in the `config.yaml` file.
+### 3. Ajouter le middleware
 
-#### Auth system
+Créez <code>middleware/middleware.go</code> :
 
-A fully fonctional auth system is generated for you, with:
-- Models and database tables
-- Sign up and login routes
-- Password hashing
-- JWT token generation and validation
+~~~go
+package main
 
-### Routing system
+import "github.com/gin-gonic/gin"
 
-Yogourt uses a routing system very similar to Next.js framework.
+var Callbacks = map[string]func(*gin.Context){}
 
-To create a route you need to create a folder in the `api` folder.
+func main() {}
+~~~
 
-Yogourt automatically search for `GET`, `PUT`, `POST`, `PATCH`, `DELETE` functions in any go module of the route folder.
+Ce fichier et son symbole <code>Callbacks</code> sont obligatoires, même si aucun middleware applicatif n’est encore défini.
 
-To be accepted by Yogourt, every go file inside of the `api` folder must be a module. This means your files must be in the `package main` and have an empty `main` function.
+### 4. Ajouter une route
 
-To create a sub-route, you need to create a folder inside of the route folder.
+Créez <code>api/health/route.go</code> :
 
-To implement route with parameters, you need to create a folder and put the parameter name between brackets like this `[id]`.
+~~~go
+package main
 
-### Middlewares
+import (
+	"github.com/gin-gonic/gin"
+	"github.com/goyourt/yogourt/routing"
+)
 
-In your generated files, you will find a `middlewares` folder with a `middleware.go` file.
+func GET(c *gin.Context) {
+	routing.RespondSuccess(c, gin.H{"status": "ok"})
+}
 
-To add a middleware to a route, you juste have to add the function in the `Callbacks` var of `middleware.go` file.
+func main() {}
+~~~
 
-The following rules are used to add middlewares to routes:
-- middlewares are stacked, this mean that if you set a middleware to the route `/api` and another to the route `/api/user`, both middlewares will be executed for the route `/api/user`
-- you can delete middlewares for a specific route, and it's sub-routes by bindin the route middleware to `nil`
-- if you put the char `^` at the beginning of your route name (ex `^/api/user/login`), middlewares of the parents routes will not be executed for this route and it's sub-routes
+Cette source expose <code>GET /api/health</code>.
+
+### 5. Démarrer l’application
+
+Créez <code>main.go</code> :
+
+~~~go
+package main
+
+import "github.com/goyourt/yogourt/routing"
+
+func main() {
+	routing.Initialize()
+}
+~~~
+
+Le runtime v2 ne compile pas les plugins. Construisez-les avant de lancer le serveur :
+
+~~~sh
+mkdir -p .yogourt/middleware .yogourt/api/health
+go build -buildmode=plugin -o .yogourt/middleware/middleware.go.so ./middleware/middleware.go
+go build -buildmode=plugin -o .yogourt/api/health/route.go.so ./api/health/route.go
+go run .
+~~~
+
+Puis vérifiez :
+
+~~~sh
+curl http://localhost:8080/api/health
+~~~
+
+Réponse :
+
+~~~json
+{"data":{"status":"ok"}}
+~~~
+
+## Routage en bref
+
+L’URL dépend du dossier contenant le fichier, pas de son nom :
+
+| Source | Route |
+| --- | --- |
+| <code>api/route.go</code> | <code>/api</code> |
+| <code>api/users/route.go</code> | <code>/api/users</code> |
+| <code>api/users/id_/route.go</code> | <code>/api/users/:id</code> |
+| <code>api/users/id_/posts/postSlug_/route.go</code> | <code>/api/users/:id/posts/:postSlug</code> |
+
+Les symboles exportés reconnus sont <code>GET</code>, <code>POST</code>, <code>PUT</code>, <code>PATCH</code> et <code>DELETE</code>. Les handlers Gin existants restent compatibles ; <code>*yogourt.Context</code> permet en plus l’injection typée des paramètres de chemin.
+
+~~~go
+package main
+
+import (
+	"github.com/goyourt/yogourt"
+	"github.com/goyourt/yogourt/routing"
+)
+
+type Params struct {
+	UserID int `param:"id"`
+}
+
+func GET(c *yogourt.Context, params Params) {
+	routing.RespondSuccess(c.Gin(), params)
+}
+
+func main() {}
+~~~
+
+Le dossier scanné vient de <code>paths.route_folder</code> : <code>routing.Initialize()</code> ne prend pas de dossier en argument. Le préfixe HTTP vaut <code>/api</code> par défaut et se règle par <code>routing.WithPrefix("/v1")</code> ou par <code>server.base_path</code> dans la configuration ; il ne dépend pas du nom du dossier scanné.
+
+La syntaxe de dossier <code>id_</code> est recommandée. Les formes historiques <code>[id]</code> et <code>_id</code> restent reconnues. Le [guide de routage](docs/routing.md) décrit les signatures, conversions et règles de middleware.
+
+## CLI
+
+Le CLI publié ne doit pas être utilisé pour initialiser une application v2 : il génère encore <code>config.yaml</code>, la clé <code>database.dbname</code> et une structure ancienne incompatible avec ce runtime. Les commandes de compilation <code>build</code>, <code>dev</code> et <code>start</code> sont en cours de préparation mais ne font pas partie d’une version publiée.
+
+En attendant leur publication, utilisez les commandes <code>go build -buildmode=plugin</code> indiquées ci-dessus.
+
+## Vérification du framework
+
+Depuis ce dépôt :
+
+~~~sh
+go test ./...
+go test -race ./...
+go vet ./...
+~~~
+
+Un test d’intégration compile de vrais plugins (<code>go build -buildmode=plugin</code>) et fait tourner le chargeur du framework dessus : ouverture des <code>.so</code>, extraction des symboles, enregistrement des routes, permissions dérivées et déclarées. Il est inclus dans <code>go test ./...</code> et coûte quelques secondes par plugin, beaucoup plus au premier appel puisque toutes les dépendances doivent être recompilées pour ce mode de construction :
+
+~~~sh
+go test ./routing -run TestPluginRoutesEndToEnd -v   # ce test seul
+go test -short ./...                                 # le saute
+~~~
+
+Sur une plateforme sans support des plugins Go, le test se saute de lui-même avec un message explicite.
+
+## Limites connues de la préversion
+
+- les plugins Go ne sont pas portables vers Windows et sont sensibles à toute différence de toolchain ou de dépendances ;
+- le runtime vérifie uniquement l’existence des fichiers <code>.so</code>, pas leur fraîcheur ;
+- une collision méthode/route n’est pas détectée avant l’enregistrement et peut provoquer un panic Gin ;
+- le fournisseur de base de données est PostgreSQL uniquement. Sur TCP, il exige <code>verify-full</code> ; le transport local par socket Unix demande une exception explicite. Le chemin de recherche des schémas et les bornes du pool se règlent par <code>database.search_path</code> et <code>database.pool</code> ; voir le [durcissement du runtime](docs/runtime-security.md).
+
+Ces contraintes sont détaillées dans les guides afin de ne pas les confondre avec des garanties de la future version stable.

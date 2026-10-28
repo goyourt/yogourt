@@ -1,0 +1,33 @@
+app_name: "test-app"
+version: "1.0.0"
+mode: "development"
+env_files: "./configs/yogourt.env"
+
+server:
+  port: 1000
+  cors: true
+  base_path: "/base_path"
+  base_url: "https://test-app.example.com"
+
+database:
+  type: "postgres"
+  user: "user"
+  password: "password"
+  host: "host"
+  port: 1000
+  db: "db"
+
+cache:
+  host: "host"
+  port: 1000
+  password: "password"
+  db: 1000
+
+paths:
+  route_folder: "route_folder"
+
+security:
+  secret_key: "${YOGOURT_CONFIG_TEST_SECRET}"
+  token_issuer: "https://auth.test.example"
+  token_audience: "yogourt-test-api"
+  token_expires: 1000 # one day

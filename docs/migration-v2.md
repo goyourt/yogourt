@@ -1,0 +1,438 @@
+# Migration de v1.1 vers v2
+
+Ce guide cible le chantier de préversion <code>feature/v2</code>. Il sera à ajuster lors de la publication stable.
+
+> [!IMPORTANT]
+> Le chemin <code>github.com/goyourt/yogourt</code> est conservé sans suffixe, par décision du mainteneur. N’ajoutez pas <code>/v2</code> aux imports. Épinglez un commit précis pour les essais ; le numéro de version publié reste à décider, car Go exige un suffixe majeur pour un tag <code>v2.x</code> avec <code>go.mod</code>. Voir les [règles de versionnement Go](https://go.dev/doc/modules/major-version).
+
+## Résumé des changements incompatibles
+
+| v1.1 | Préversion v2 |
+| --- | --- |
+| <code>config.yaml</code> à la racine | <code>yogourt.yaml</code> à la racine |
+| <code>providers.GetConfig()</code> | <code>providers.GetMainConfig()</code> |
+| <code>providers.Config</code> | <code>providers.MainConfig</code> |
+| Compilation implicite au runtime | Plugins <code>.so</code> précompilés sous <code>.yogourt</code> |
+| <code>RespondSuccess(c, status, data)</code> | <code>RespondSuccess(c, data)</code> |
+| Dossier middleware parfois documenté <code>middlewares/</code> | Chemin exact <code>middleware/middleware.go</code> |
+| Paramètres dynamiques historiques | <code>id_</code> recommandé ; anciennes formes toujours compatibles |
+
+Les handlers <code>func(*gin.Context)</code> restent compatibles. L’adoption de <code>*yogourt.Context</code> et de l’injection typée peut être progressive.
+
+Le framework v1.1 utilisait déjà <code>database.db</code> et <code>paths.route_folder</code>. En revanche, les templates du CLI v0.5 génèrent encore les anciennes clés <code>database.dbname</code> et <code>paths.api_folder</code> : corrigez-les si le projet provient de ce CLI.
+
+## 1. Épingler la préversion
+
+Ne migrez pas une application de production vers une branche flottante. Épinglez le commit v2 que vous avez validé et conservez la même révision dans :
+
+- le module principal ;
+- les plugins de routes ;
+- le plugin middleware ;
+- le système de build et l’image de déploiement.
+
+La toolchain Go et le graphe de dépendances doivent aussi être identiques entre le binaire et les plugins.
+
+## 2. Déplacer la configuration
+
+Déplacez le fichier principal :
+
+~~~text
+config.yaml
+→ yogourt.yaml
+~~~
+
+La structure attendue contient notamment :
+
+~~~yaml
+database:
+  db: "example"
+
+paths:
+  route_folder: "api"
+~~~
+
+Si le fichier a été généré par le CLI v0.5, remplacez <code>dbname</code> par <code>db</code> et <code>api_folder</code> par <code>route_folder</code>. Il s’agit d’une correction du template CLI, pas d’un changement entre les contrats du framework v1.1 et v2. Un oubli se voit maintenant au démarrage : le chargement de la configuration nomme la clé et son remplaçant.
+
+<pre><code>⚠️  ./yogourt.yaml: "paths.api_folder" was renamed to "paths.route_folder" — the value is ignored
+</code></pre>
+
+Depuis la v2, <code>paths.route_folder</code> n’est plus décoratif : c’est le dossier de routes chargé par <code>routing.Initialize</code>, et la seule source de ce dossier. En revanche <code>paths.project_name</code> et <code>paths.main_file</code> ont quitté le contrat runtime — le framework ne les a jamais lus. Vous pouvez les supprimer ; le démarrage le rappelle. <code>paths.model_folder</code> reste une clé valide : le runtime ne la lit pas, mais <code>yogourt-cli</code> s’en sert pour générer les modèles.
+
+<strong>Rupture de compilation</strong> : <code>routing.Initialize</code> ne prend
+plus de dossier en argument. Déplacez celui de votre appel dans le fichier de
+configuration :
+
+~~~go
+routing.Initialize("api", routing.WithAuthorizer(engine))  // v1
+routing.Initialize(routing.WithAuthorizer(engine))         // v2
+~~~
+
+~~~yaml
+paths:
+  route_folder: "api"
+~~~
+
+Le dossier scanné est un réglage du déploiement : le déclarer à la fois dans le
+code et dans la configuration permettait à un programme de contredire son
+propre <code>yogourt.yaml</code>. Sans <code>route_folder</code>, le démarrage
+échoue en nommant la clé.
+
+<strong>Base de données</strong> : les connexions TCP exigent désormais
+<code>database.ssl_mode: verify-full</code>, également choisi par défaut.
+Configurez l’autorité de certification de votre serveur si nécessaire :
+
+~~~yaml
+database:
+  ssl_mode: "verify-full"
+  ssl_root_cert: "/etc/ssl/certs/db-ca.crt"
+  search_path: "app,public"
+  pool:
+    max_open_conns: 25
+    conn_max_lifetime: 30m
+~~~
+
+Les valeurs du DSN sont aussi échappées : un mot de passe contenant une espace
+ou une apostrophe était jusque-là concaténé tel quel et tronquait la chaîne de
+connexion.
+
+<strong>Rupture de compilation</strong> : un échec de connexion n’arrête plus le
+processus, il est retourné. Les signatures suivantes changent :
+
+| Avant | Après |
+| --- | --- |
+| <code>providers.GetDB() *gorm.DB</code> | <code>providers.GetDB() (*gorm.DB, error)</code> |
+| <code>providers.InitDB() *gorm.DB</code> | <code>providers.InitDB() (*gorm.DB, error)</code> |
+| <code>database.SearchQuery(...) *gorm.DB</code> | <code>database.SearchQuery(...) (*gorm.DB, error)</code> |
+| <code>database.JoinTables(...)</code> | supprimé — <code>database.SearchQuery(...) (*gorm.DB, error)</code> puis l’API GORM |
+
+~~~go
+db := providers.GetDB()                    // v1 : log.Fatalf, le processus sort
+
+db, err := providers.GetDB()               // v2
+if err != nil {
+	routing.RespondServiceUnavailable(c)
+	return
+}
+~~~
+
+<code>GetOneBy</code>, <code>GetAll</code>, <code>GetAllPaginated</code>, les
+méthodes de <code>DataWriter</code>, <code>HardDelete</code> et les helpers
+<code>Hydrate*</code> gardent leur signature : ils retournent maintenant
+l’erreur de connexion là où ils retournaient déjà l’erreur GORM. Une base
+indisponible fait donc échouer les requêtes qui en ont besoin, au lieu
+d’emporter le processus depuis la première d’entre elles. La connexion n’étant
+mémorisée qu’une fois ouverte, une base qui revient est reprise sans
+redémarrage.
+
+<pre><code>⚠️  ./yogourt.yaml: "paths.project_name" is not a runtime setting (only the v0.5 CLI reads it) — delete it
+</code></pre>
+
+Deux autres champs ont pris un sens : <code>database.type</code> est contrôlé (seul PostgreSQL est fourni, une autre valeur arrête le démarrage) et <code>server.base_path</code> règle le préfixe HTTP, jusque-là figé à <code>/api</code>.
+
+<strong>Changement de comportement</strong> : <code>services.GetBaseUrl</code> ne
+retourne plus <code>server.host</code> tel quel. <code>server.host</code> est une
+adresse d’écoute — avec <code>host: "0.0.0.0"</code>, l’ancien helper retournait
+<code>0.0.0.0</code>, sans schéma ni port. L’URL est désormais reconstruite avec
+son schéma et son port (<code>http://localhost:8080</code> pour un hôte vide ou
+non spécifié), et la nouvelle clé <code>server.base_url</code> porte l’URL
+publique quand l’application est derrière un reverse proxy, une terminaison TLS
+ou un port de conteneur remappé :
+
+~~~yaml
+server:
+  host: "0.0.0.0"
+  port: 8080
+  base_url: "https://api.example.com"
+~~~
+
+Les applications qui contournaient le helper en concaténant elles-mêmes un
+schéma et un port doivent retirer ce contournement, sous peine d’obtenir une
+URL doublée.
+
+<strong>Rupture de compilation possible</strong> : le code qui lisait <code>cfg.Paths.ProjectName</code> ou <code>cfg.Paths.MainFile</code> ne compile plus, et <code>cfg.Server.CORS</code> est désormais un <code>*bool</code> (l’absence de clé et <code>false</code> devaient cesser de se confondre).
+
+Ajoutez une configuration CORS avec au moins une origine :
+
+~~~yaml
+server:
+  port: 8080
+
+cors:
+  allowed_origins:
+    - "http://localhost:3000"
+  allowed_methods:
+    - GET
+    - POST
+    - PUT
+    - PATCH
+    - DELETE
+    - OPTIONS
+  allowed_headers:
+    - Origin
+    - Content-Type
+    - Authorization
+~~~
+
+Si l’application utilise les fichiers, créez aussi <code>configs/files.yaml</code> avec des valeurs globales :
+
+~~~yaml
+file_folder: "./public/files/"
+max_file_size: 5242880
+files: {}
+~~~
+
+Consultez la [référence complète](configuration.md). En particulier :
+
+- <code>server.host</code> est une adresse d’écoute brute, sans schéma ni port ;
+- <code>server.cors: false</code> coupe tout le traitement CORS ; la clé absente laisse la section <code>cors</code> décider ;
+- <code>cors.allow_all_origins</code> est transmis à Gin et gagne sur une liste d’origines simultanée ;
+- une section <code>cors</code> sans origine n’installe plus le middleware : la v0.5 activait alors toutes les origines. Un frontend d’une autre origine cesse de fonctionner tant que <code>allowed_origins</code> n’est pas rempli ;
+- <code>allowed_headers</code> vide ne prend plus seulement les défauts de Gin : <code>Authorization</code> y est ajouté, sans quoi le login JWT du framework ne pouvait pas fonctionner depuis une autre origine. Une liste écrite reste utilisée telle quelle ;
+- <code>cors.max_age</code> n’est plus multiplié par <code>time.Hour</code> et accepte un nombre de secondes : <code>max_age: 12ns</code>, seul contournement de l’ancienne conversion, vaut désormais 12 nanosecondes — écrivez <code>12h</code> ;
+- le fournisseur DB reste PostgreSQL et exige <code>verify-full</code> sur TCP ; l’exception locale exige un chemin de socket Unix et <code>allow_insecure_local_socket: true</code>.
+
+## 3. Mettre à jour les providers
+
+Avant :
+
+~~~go
+cfg := providers.GetConfig()
+var typed *providers.Config
+~~~
+
+Après :
+
+~~~go
+cfg := providers.GetMainConfig()
+var typed *providers.MainConfig
+~~~
+
+La v2 ajoute le chargement des fichiers dotenv avant l’expansion du YAML. <code>env_files</code> accepte une chaîne ou une liste, mais pas la syntaxe <code>${VAR:-default}</code>.
+
+## 4. Préparer les routes
+
+Chaque fichier route doit rester un plugin Go autonome :
+
+~~~go
+package main
+
+import "github.com/gin-gonic/gin"
+
+func GET(c *gin.Context) {
+	// Le handler Gin v1 reste valide.
+}
+
+func main() {}
+~~~
+
+La forme dynamique recommandée devient :
+
+~~~text
+api/users/id_/route.go
+→ /api/users/:id
+~~~
+
+<code>[id]</code> et <code>_id</code> restent supportés pour faciliter une migration progressive.
+
+Vous pouvez ensuite adopter l’injection v2 :
+
+~~~go
+package main
+
+import "github.com/goyourt/yogourt"
+
+type Params struct {
+	ID uint64 `param:"id"`
+}
+
+func GET(c *yogourt.Context, params Params) {
+	// ...
+}
+
+func main() {}
+~~~
+
+Le second argument ne reçoit que les paramètres de chemin. Les query params, headers et bodies restent à lire via Gin ou <code>routing.HandleRequest</code>.
+
+## 5. Migrer les réponses
+
+Avant :
+
+~~~go
+routing.RespondSuccess(c, http.StatusOK, data)
+~~~
+
+Après :
+
+~~~go
+routing.RespondSuccess(c, data)
+~~~
+
+Pour les autres statuts :
+
+~~~go
+routing.RespondCreated(c, data)
+routing.RespondWithContent(c, http.StatusAccepted, "job", job)
+routing.RespondNoContent(c)
+routing.RespondNotFound(c)
+routing.RespondAndAbort(c, http.StatusBadRequest, "invalid request")
+~~~
+
+Ces helpers attendent toujours <code>*gin.Context</code>. Depuis <code>*yogourt.Context</code>, utilisez <code>c.Gin()</code>.
+
+## 6. Migrer le middleware
+
+Le chemin attendu est strict :
+
+~~~text
+middleware/middleware.go
+→ .yogourt/middleware/middleware.go.so
+~~~
+
+Structure minimale :
+
+~~~go
+package main
+
+import "github.com/gin-gonic/gin"
+
+var Callbacks = map[string]func(*gin.Context){}
+
+func main() {}
+~~~
+
+Pour les routes dynamiques, utilisez des clés Gin :
+
+~~~go
+var Callbacks = map[string]func(*gin.Context){
+	"/api/users/:id": authenticate,
+}
+~~~
+
+N’utilisez pas <code>/api/users/id_</code> ou <code>/api/users/[id]</code> comme clé de callback.
+
+Rappels :
+
+- les callbacks parents s’empilent ;
+- <code>nil</code> efface les callbacks hérités ;
+- <code>^</code> remplace les parents.
+
+## 7. Précompiler les plugins
+
+Le runtime ne récupère et ne compile plus un plugin manquant ou périmé. Le chemin de sortie doit reproduire le chemin source :
+
+~~~text
+api/users/id_/route.go
+→ .yogourt/api/users/id_/route.go.so
+~~~
+
+Exemple :
+
+~~~sh
+mkdir -p .yogourt/middleware .yogourt/api/users/id_
+go build -buildmode=plugin -o .yogourt/middleware/middleware.go.so ./middleware/middleware.go
+go build -buildmode=plugin -o .yogourt/api/users/id_/route.go.so ./api/users/id_/route.go
+go run .
+~~~
+
+Tous les fichiers <code>.go</code> scannés, sauf <code>_test.go</code>, doivent avoir un <code>.so</code>. Reconstruisez l’ensemble après toute modification de :
+
+- version de Go ;
+- dépendance directe ou indirecte ;
+- source de route ou middleware ;
+- tags et options de compilation.
+
+Le CLI stable v0.5 ne fournit pas les commandes v2 <code>build</code>, <code>dev</code> ou <code>start</code> et son <code>init</code> génère encore une structure v1. Utilisez la compilation manuelle tant qu’une nouvelle version n’est pas publiée.
+
+## 8. Migrer les modèles vers le nouveau contrat
+
+<code>interfaces.BaseInterface</code> et ses 16 méthodes n’existent plus. Le CRUD n’exige plus aucune interface ; la seule interface du framework est <code>interfaces.Resource</code> (<code>GetPublicId</code>, <code>PublicIdColumn</code>), requise pour l’hydratation de <code>HandleRequest</code>, <code>Authenticate</code>, <code>UpsertRelations</code> et le sujet d’autorisation. L’audit, le reset d’identité générée et le soft delete audité sont des capacités optionnelles détectées par assertion de type (<code>GeneratedIdentityResetter</code>, <code>CreatedBySetter</code>, <code>UpdatedBySetter</code>, <code>UpdatedAtSetter</code>, <code>DeleteAuditor</code>, <code>AuditActorProvider</code>).
+
+- Les modèles qui embarquent <code>interfaces.Base</code> ne changent pas : <code>Base</code> est recomposée en briques (<code>WithID</code>, <code>WithUuid</code>, <code>WithTimestamps</code>, <code>WithAudit</code>, <code>WithSoftDelete</code>) et porte les mêmes capacités qu’avant.
+- Pour un nouveau modèle dont l’UUID public est aussi la clé primaire, utilisez <code>WithUuidPK</code> sans <code>WithID</code>. Le CRUD réinitialise cette identité générée lors d’une création. Le script de migration de <code>Base</code> ne convertit pas une PK entière existante en UUID : une telle conversion demande une migration applicative des clés étrangères.
+- Le code qui appelait les getters/setters supprimés (<code>GetID</code>, <code>GetUuid</code>, <code>SetCreatedById</code>…) accède aux champs des briques directement (<code>*user.ID</code>, <code>user.Uuid</code>) ou passe par <code>GetPublicId()</code>.
+- <code>HydrateRelation</code> perd son paramètre <code>relationId</code> ; <code>SearchQuery</code> prend la slice en premier argument ; <code>JoinTables</code> est supprimé (passez par <code>SearchQuery</code> puis l’API GORM) ; <code>database.Like</code>/<code>Or</code> côté filtres sont inchangés.
+- <code>Create</code> et <code>Update</code> n’écrivent plus jamais les associations implicitement (<code>Omit(clause.Associations)</code>) : les relations imbriquées passent par <code>UpsertRelations</code>. <code>Update</code> ne modifie que les champs non nuls (patch) — il ne peut pas vider une colonne.
+- <code>GetCurrentUser</code> retourne <code>any</code> : faites l’assertion vers votre modèle utilisateur.
+
+Le schéma de <code>Base</code> est assaini : la contrainte PK reprend son nom par défaut et <code>deleted_at</code> est indexé. Le script <code>migrations/v1_to_v2.sql</code> cible les tables compatibles du schéma <code>public</code> — deux changements d’index, aucune donnée déplacée. La [procédure reproductible](../migrations/README.md) compare les dumps de schéma avant/après avec une création v2 et vérifie l’idempotence ainsi que la conservation des données. Examinez son périmètre avant de l’appliquer à une base existante.
+
+## 8 bis. Adapter les implémentations de fichiers
+
+<code>interfaces.FileInterface</code> ne contient plus que les méthodes fichier (elle n’embarque plus <code>BaseInterface</code>, et n’impose pas <code>Resource</code>) :
+
+~~~go
+GetName() string / SetName(string)
+GetPath() string / SetPath(string)
+GetExtension() string / SetExtension(string)
+GetContent() string / SetContent(string)
+GetType() string / SetType(string)
+GetFilePath(folder string) string
+~~~
+
+Le type intégré <code>interfaces.File</code> embarque <code>Base</code> et reste donc une <code>Resource</code> complète.
+
+Ne migrez pas le stockage sans prendre en compte les limites actuelles : contenu chargé en mémoire, erreurs d’écriture masquées et extension concaténée sans point au UUID. Voir le [guide des services](services.md#fichiers).
+
+## 9. Réviser les accès DB
+
+La v2 ajoute notamment :
+
+- <code>DataWriter.Upsert</code> ;
+- <code>database.Or</code> ;
+- la pagination dédupliquée avec <code>Distinct</code> ;
+- la clé de filtre <code>orderBy</code> ;
+- <code>UpsertRelations</code>.
+
+Les lectures retournent l’erreur GORM : <code>GetOneBy</code> (y compris <code>gorm.ErrRecordNotFound</code>), <code>GetAll</code>, <code>GetAllPaginated</code>, <code>HydrateRelation</code> et <code>HydrateManyToManyRelation</code>. <code>GetOneBy</code> ne mute plus l’objet de l’appelant sur un échec. <code>Update</code> et <code>Delete</code> exigent la PK complète et refusent une ligne absente ; <code>UpsertRelations</code> refuse un identifiant public inconnu au lieu de créer.
+
+Pendant la migration :
+
+- utilisez <code>[]*Model</code> pour les helpers génériques ;
+- n’acceptez jamais directement un nom de colonne, relation ou ordre fourni par le client ;
+- récupérez <code>.Error</code> via <code>SearchQuery</code> ou GORM pour les chemins critiques ;
+- encapsulez les écritures composées dans une transaction explicite.
+
+## 10. Réviser JWT et fichiers
+
+La v2 crée des JWT HS256 avec <code>sub</code>, <code>exp</code>, <code>iss</code> et <code>aud</code>. Le claim <code>sub</code> porte l’identifiant public du modèle : une chaîne opaque et non vide. **Les tokens v1 portant seulement <code>uuid</code>, ainsi que les tokens sans la nouvelle politique de claims, doivent être réémis (re-login).** La validation exige HS256, une expiration valide, l’émetteur et l’audience configurés. Le secret doit contenir au moins 32 octets ; une politique incomplète empêche le démarrage en production et rend les services JWT inutilisables ailleurs.
+
+Avant mise en production :
+
+- configurez un secret aléatoire de 32 octets au moins, sous peine de refus de démarrage ;
+- configurez <code>security.token_issuer</code>, <code>security.token_audience</code> et une durée <code>security.token_expires</code> strictement positive ;
+- vérifiez les types MIME et extensions des uploads ;
+- gérez les erreurs d’écriture de fichiers ;
+- adaptez le suivi Redis à son nouveau namespace et à sa fenêtre de rétention ; voir le [suivi des échecs](login-failures.md).
+
+## 11. Valider la migration
+
+Depuis l’application :
+
+1. supprimez de manière contrôlée les anciens artefacts <code>.yogourt</code> ;
+2. reconstruisez chaque plugin ;
+3. démarrez le serveur depuis la racine du projet ;
+4. testez chaque paire méthode/URL, y compris les routes dynamiques ;
+5. testez les branches middleware <code>nil</code> et <code>^</code> ;
+6. vérifiez CORS depuis les origines autorisées ;
+7. testez PostgreSQL, Redis, JWT et uploads dans un environnement isolé.
+
+Depuis le dépôt Yogourt :
+
+~~~sh
+go test ./...
+go test -race ./...
+go vet ./...
+~~~
+
+Une migration n’est complète que lorsque le binaire et tous les plugins ont été reconstruits ensemble et que les scénarios d’intégration applicatifs passent.
+
+## Points à surveiller avant le tag stable
+
+- choix du versionnement publié, le chemin actuel sans suffixe étant conservé pour la préversion ;
+- publication du CLI et de son workflow build/dev/start ;
+- validation stricte de la configuration ;
+- stratégie de portabilité en dehors des plugins Go ;
+- retours d’erreur DB et fichiers ;
+- stratégie applicative de révocation et de rotation des clés JWT ;
+- détection des collisions de routes.

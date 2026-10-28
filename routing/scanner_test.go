@@ -1,13 +1,15 @@
 package routing
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
 func TestRoutePathForDynamicBracketSegment(t *testing.T) {
-	base := "/project/api"
-	full := "/project/api/users/[id]/index.go"
-	got := routePathFor(base, full, "index.go")
+	base := filepath.Join("project", "api")
+	full := filepath.Join(base, "users", "[id]", "index.go")
+	got := routePathFor("/api", base, full)
 	want := "/api/users/:id"
 	if got != want {
 		t.Errorf("expected %s, got %s", want, got)
@@ -15,11 +17,116 @@ func TestRoutePathForDynamicBracketSegment(t *testing.T) {
 }
 
 func TestRoutePathForStaticAndLegacyDynamicSegments(t *testing.T) {
-	base := "/project/api"
-	full := "/project/api/posts/_slug/comments/[commentId]/handler.go"
-	got := routePathFor(base, full, "handler.go")
+	base := filepath.Join("project", "api")
+	full := filepath.Join(base, "posts", "_slug", "comments", "[commentId]", "handler.go")
+	got := routePathFor("/api", base, full)
 	want := "/api/posts/:slug/comments/:commentId"
 	if got != want {
 		t.Errorf("expected %s, got %s", want, got)
+	}
+}
+
+func TestRoutePathForDynamicTrailingUnderscoreSegment(t *testing.T) {
+	base := filepath.Join("project", "api")
+	full := filepath.Join(base, "users", "userId_", "posts", "postSlug_", "handler.go")
+	got := routePathFor("/api", base, full)
+	want := "/api/users/:userId/posts/:postSlug"
+	if got != want {
+		t.Errorf("expected %s, got %s", want, got)
+	}
+}
+
+func TestRoutePathForRootAPIFile(t *testing.T) {
+	base := filepath.Join("project", "api")
+	full := filepath.Join(base, "index.go")
+	got := routePathFor("/api", base, full)
+	want := "/api"
+	if got != want {
+		t.Errorf("expected %s, got %s", want, got)
+	}
+}
+
+func TestIsGoFileExcludesTestFiles(t *testing.T) {
+	cases := map[string]bool{
+		"index.go":      true,
+		"user.go":       true,
+		"user_test.go":  false,
+		"index_test.go": false,
+		"readme.md":     false,
+	}
+
+	for name, want := range cases {
+		if got := isGoFile(name); got != want {
+			t.Errorf("isGoFile(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+func TestWalkGoFilesExcludesTestFiles(t *testing.T) {
+	root := t.TempDir()
+	writeRouteFile(t, root, "index.go")
+	writeRouteFile(t, root, "index_test.go")
+	writeRouteFile(t, root, filepath.Join("users", "[id]", "user.go"))
+	writeRouteFile(t, root, filepath.Join("users", "[id]", "user_test.go"))
+
+	files, err := walkGoFiles(root)
+	if err != nil {
+		t.Fatalf("walkGoFiles returned error: %v", err)
+	}
+
+	want := map[string]bool{
+		filepath.Join(root, "index.go"):                 false,
+		filepath.Join(root, "users", "[id]", "user.go"): false,
+	}
+	if len(files) != len(want) {
+		t.Fatalf("expected %d files, got %d: %#v", len(want), len(files), files)
+	}
+	for _, f := range files {
+		if _, ok := want[f]; !ok {
+			t.Fatalf("unexpected file returned: %s", f)
+		}
+		want[f] = true
+	}
+	for f, found := range want {
+		if !found {
+			t.Fatalf("expected file not found: %s", f)
+		}
+	}
+}
+
+func writeRouteFile(t *testing.T, root, rel string) {
+	t.Helper()
+
+	path := filepath.Join(root, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("package main\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+}
+
+func TestRoutePathForCustomPrefix(t *testing.T) {
+	base := filepath.Join("project", "api")
+	cases := []struct {
+		name   string
+		prefix string
+		rel    []string
+		want   string
+	}{
+		{"nested folder under a custom prefix", "/v1", []string{"users", "userId_", "index.go"}, "/v1/users/:userId"},
+		{"root file under a custom prefix", "/v1", []string{"index.go"}, "/v1"},
+		{"multi segment prefix", "/api/v2", []string{"users", "index.go"}, "/api/v2/users"},
+		{"nested folder at the root", "", []string{"users", "index.go"}, "/users"},
+		{"root file at the root", "", []string{"index.go"}, "/"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			full := filepath.Join(append([]string{base}, c.rel...)...)
+			if got := routePathFor(c.prefix, base, full); got != c.want {
+				t.Errorf("routePathFor(%q, …%v) = %q, want %q", c.prefix, c.rel, got, c.want)
+			}
+		})
 	}
 }
