@@ -6,11 +6,6 @@ import (
 	"github.com/goyourt/yogourt/interfaces"
 )
 
-type guardModel struct {
-	interfaces.Base
-	Tags []*guardTag
-}
-
 type guardTag struct {
 	interfaces.Base
 }
@@ -21,38 +16,16 @@ type guardTag struct {
 // That is exactly why the broken guard went unnoticed: it always returned
 // early, so nothing ever exercised the query.
 
-func TestHydrateManyToManyRelationSkipsLoadedSlice(t *testing.T) {
-	model := &guardModel{Tags: []*guardTag{}}
-
-	// An allocated slice, even empty, means the relation was loaded.
-	if err := HydrateManyToManyRelation(model, "Tags", &model.Tags); err != nil {
-		t.Fatalf("an allocated slice must be left alone, got %v", err)
-	}
-
-	model.Tags = []*guardTag{{}}
-	if err := HydrateManyToManyRelation(model, "Tags", &model.Tags); err != nil {
-		t.Fatalf("a filled slice must be left alone, got %v", err)
-	}
-}
-
-func TestHydrateManyToManyRelationSkipsNilPointer(t *testing.T) {
-	model := &guardModel{}
-
-	if err := HydrateManyToManyRelation[*guardTag](model, "Tags", nil); err != nil {
-		t.Fatalf("a nil pointer has nothing to fill, got %v", err)
-	}
-}
-
 type guardPtrModel struct {
 	interfaces.Base
 	Tags *[]*guardTag `gorm:"many2many:guard_ptr_tag;"`
 }
 
-func TestHydrateManyToManyRelationPtrSkipsLoadedField(t *testing.T) {
+func TestHydrateManyToManyRelationSkipsLoadedField(t *testing.T) {
 	loaded := &[]*guardTag{{}}
 	model := &guardPtrModel{Tags: loaded}
 
-	if err := HydrateManyToManyRelationPtr(model, "Tags", &model.Tags); err != nil {
+	if err := HydrateManyToManyRelation(model, "Tags", &model.Tags); err != nil {
 		t.Fatalf("a loaded field must be left alone, got %v", err)
 	}
 	if model.Tags != loaded {
@@ -60,21 +33,21 @@ func TestHydrateManyToManyRelationPtrSkipsLoadedField(t *testing.T) {
 	}
 }
 
-func TestHydrateManyToManyRelationPtrSkipsNilAddress(t *testing.T) {
+func TestHydrateManyToManyRelationSkipsNilAddress(t *testing.T) {
 	model := &guardPtrModel{}
 
-	if err := HydrateManyToManyRelationPtr[*guardTag](model, "Tags", nil); err != nil {
+	if err := HydrateManyToManyRelation[*guardTag](model, "Tags", nil); err != nil {
 		t.Fatalf("a nil address has nothing to fill, got %v", err)
 	}
 }
 
-// An unsaved object reaches the preload branch of HydrateManyToManyRelation
-// only through the database provider, which would kill the run: completing
+// An unsaved object would reach the preload branch of
+// HydrateManyToManyRelation only through the database provider, which would kill the run: completing
 // this test proves the provider is never called.
-func TestHydrateManyToManyRelationPtrAllocatesUnsavedObject(t *testing.T) {
+func TestHydrateManyToManyRelationAllocatesUnsavedObject(t *testing.T) {
 	model := &guardPtrModel{}
 
-	if err := HydrateManyToManyRelationPtr(model, "Tags", &model.Tags); err != nil {
+	if err := HydrateManyToManyRelation(model, "Tags", &model.Tags); err != nil {
 		t.Fatalf("an unsaved object has nothing to load, got %v", err)
 	}
 	if model.Tags == nil {
