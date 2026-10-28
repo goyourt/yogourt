@@ -222,40 +222,6 @@ func TestMiddlewareForScopeFromContext(t *testing.T) {
 	}
 }
 
-// TestLazyMiddleware exercises ginmw.Middleware around the process-wide
-// published engine. The storage is write-once, so a single test drives both
-// the unpublished (500) and the published paths, in that order.
-func TestLazyMiddleware(t *testing.T) {
-	subject := &authorization.Subject{ID: "subject-1"}
-
-	recorder := serve(Middleware("article.read"), subject)
-	if recorder.Code != http.StatusInternalServerError {
-		t.Errorf("status before Publish = %d, want 500", recorder.Code)
-	}
-	assertGenericBody(t, recorder)
-
-	if err := authorization.Publish(newTestEngine(t)); err != nil {
-		t.Fatalf("Publish failed: %v", err)
-	}
-
-	recorder = serve(Middleware("article.read"), subject)
-	if recorder.Code != http.StatusOK {
-		t.Errorf("status after Publish = %d, want 200", recorder.Code)
-	}
-
-	recorder = serve(Middleware("article.read"), nil)
-	if recorder.Code != http.StatusUnauthorized {
-		t.Errorf("status for anonymous request = %d, want 401", recorder.Code)
-	}
-	assertGenericBody(t, recorder)
-
-	recorder = serve(Middleware("article.delete"), subject)
-	if recorder.Code != http.StatusForbidden {
-		t.Errorf("status for missing permission = %d, want 403", recorder.Code)
-	}
-	assertGenericBody(t, recorder)
-}
-
 func TestDeniedHandlerNeverExecuted(t *testing.T) {
 	engine := newTestEngine(t)
 	handlerCalled := false

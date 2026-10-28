@@ -11,7 +11,6 @@ import (
 
 	"github.com/goyourt/yogourt/authorization"
 	"github.com/goyourt/yogourt/compiler"
-	"github.com/goyourt/yogourt/core"
 )
 
 // derivedVerbs maps an HTTP method to the verb part of a permission derived by
@@ -263,14 +262,6 @@ func loadRoutePermissions(soPath string) (permissions map[string]string, hasSymb
 	}
 
 	return *loaded, true, nil
-}
-
-// routePermissionMiddleware records the permission declared for the route
-// method, making it available to Context.Authorize.
-func routePermissionMiddleware(permission string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		core.SetRoutePermission(c, permission)
-	}
 }
 
 func methodsOf(routes map[string]gin.HandlerFunc) []string {

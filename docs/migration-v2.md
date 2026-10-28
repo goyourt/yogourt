@@ -9,7 +9,7 @@ Ce guide cible le chantier de préversion <code>feature/v2</code>. Il sera à aj
 
 | v1.1 | Préversion v2 |
 | --- | --- |
-| <code>config.yaml</code> à la racine | <code>configs/yogourt.yaml</code> |
+| <code>config.yaml</code> à la racine | <code>yogourt.yaml</code> à la racine |
 | <code>providers.GetConfig()</code> | <code>providers.GetMainConfig()</code> |
 | <code>providers.Config</code> | <code>providers.MainConfig</code> |
 | Compilation implicite au runtime | Plugins <code>.so</code> précompilés sous <code>.yogourt</code> |
@@ -38,7 +38,7 @@ Déplacez le fichier principal :
 
 ~~~text
 config.yaml
-→ configs/yogourt.yaml
+→ yogourt.yaml
 ~~~
 
 La structure attendue contient notamment :
@@ -53,7 +53,7 @@ paths:
 
 Si le fichier a été généré par le CLI v0.5, remplacez <code>dbname</code> par <code>db</code> et <code>api_folder</code> par <code>route_folder</code>. Il s’agit d’une correction du template CLI, pas d’un changement entre les contrats du framework v1.1 et v2. Un oubli se voit maintenant au démarrage : le chargement de la configuration nomme la clé et son remplaçant.
 
-<pre><code>⚠️  configs/yogourt.yaml: "paths.api_folder" was renamed to "paths.route_folder" — the value is ignored
+<pre><code>⚠️  ./yogourt.yaml: "paths.api_folder" was renamed to "paths.route_folder" — the value is ignored
 </code></pre>
 
 Depuis la v2, <code>paths.route_folder</code> n’est plus décoratif : c’est le dossier de routes chargé par <code>routing.Initialize</code>, et la seule source de ce dossier. En revanche <code>paths.project_name</code> et <code>paths.main_file</code> ont quitté le contrat runtime — le framework ne les a jamais lus. Vous pouvez les supprimer ; le démarrage le rappelle. <code>paths.model_folder</code> reste une clé valide : le runtime ne la lit pas, mais <code>yogourt-cli</code> s’en sert pour générer les modèles.
@@ -124,7 +124,7 @@ d’emporter le processus depuis la première d’entre elles. La connexion n’
 mémorisée qu’une fois ouverte, une base qui revient est reprise sans
 redémarrage.
 
-<pre><code>⚠️  configs/yogourt.yaml: "paths.project_name" is not a runtime setting (only the v0.5 CLI reads it) — delete it
+<pre><code>⚠️  ./yogourt.yaml: "paths.project_name" is not a runtime setting (only the v0.5 CLI reads it) — delete it
 </code></pre>
 
 Deux autres champs ont pris un sens : <code>database.type</code> est contrôlé (seul PostgreSQL est fourni, une autre valeur arrête le démarrage) et <code>server.base_path</code> règle le préfixe HTTP, jusque-là figé à <code>/api</code>.

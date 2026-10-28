@@ -7,8 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/goyourt/yogourt/authorization"
+	"github.com/goyourt/yogourt/dairy"
 	"github.com/goyourt/yogourt/interfaces"
-	"github.com/goyourt/yogourt/routing"
 	"github.com/goyourt/yogourt/services/database"
 	"github.com/goyourt/yogourt/services/providers"
 	"gorm.io/gorm"
@@ -22,21 +22,21 @@ func Authenticate(c *gin.Context, currentUser interfaces.Resource) {
 		// internal error strings of the framework must not describe its
 		// structure to an anonymous caller (AUTHZ-014).
 		log.Printf("authentication refused: %v", err)
-		routing.RespondAndAbort(c, http.StatusUnauthorized, "Unauthorized")
+		dairy.RespondAndAbort(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
 	parsedToken, err := ValidToken(token)
 	if err != nil {
 		log.Printf("authentication refused: %v", err)
-		routing.RespondAndAbort(c, http.StatusUnauthorized, "Unauthorized")
+		dairy.RespondAndAbort(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
 	subject, err := GetStringClaim(parsedToken, subjectClaim)
 	if err != nil {
 		log.Printf("authentication refused: %v", err)
-		routing.RespondAndAbort(c, http.StatusUnauthorized, "Unauthorized")
+		dairy.RespondAndAbort(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
@@ -57,11 +57,11 @@ func respondUserLookupFailure(c *gin.Context, err error) {
 		// The subject of a validly signed token has no row: an anonymous
 		// caller must not learn that, the body stays the generic refusal.
 		log.Printf("authentication refused: no user for the token subject")
-		routing.RespondAndAbort(c, http.StatusUnauthorized, "Unauthorized")
+		dairy.RespondAndAbort(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 	log.Printf("authentication unavailable: %v", err)
-	routing.RespondServiceUnavailable(c)
+	dairy.RespondServiceUnavailable(c)
 }
 
 func setCurrentUser(c *gin.Context, currentUser any) {

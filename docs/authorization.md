@@ -28,7 +28,7 @@ Les exemples de cette page reprennent une application de test vérifiée de bout
 │   ├── health/route.go
 │   ├── articles/route.go
 │   └── articles/id_/route.go
-├── configs/yogourt.yaml
+├── yogourt.yaml
 ├── middleware/middleware.go
 ├── .yogourt/
 └── main.go
@@ -105,22 +105,20 @@ Sans `routing.WithAuthorizer(engine)`, rien ne change : aucune déclaration exig
 `routing.WithAuthorizer(engine)` ne conserve pas le moteur dans la
 configuration du routeur : il le confie à `authorization.Publish(engine)` avant
 de charger les routes. Les handlers d'une application Yogourt sont compilés en
-plugins Go, séparés du `main` ; `c.Authorize`, `c.Can` et le middleware
-paresseux `ginmw.Middleware(action)` ne peuvent donc pas recevoir le moteur en
-argument et le retrouvent avec `authorization.Published()` au moment de la
-requête.
+plugins Go, séparés du `main` ; `c.Authorize` et `c.Can` ne peuvent donc pas
+recevoir le moteur en argument et le retrouvent avec
+`authorization.Published()` au moment de la requête.
 
 Le moteur publié est en écriture unique : un second `Publish` échoue avec
 `authorization.ErrAlreadyPublished`, ce qui interdit de remplacer les règles
 d'autorisation une fois le serveur démarré. Sans moteur publié,
-`ginmw.Middleware` et `c.Authorize` répondent `500`, et `c.Can` ou
+`c.Authorize` répond `500`, et `c.Can` ou
 `c.HasPermission` renvoient `false` : jamais une autorisation.
 
 Dans une application Yogourt, il n'y a rien d'autre à faire que
-`routing.WithAuthorizer(engine)`. Appelez `authorization.Publish` vous-même
-uniquement dans une application Gin sans Yogourt qui veut le middleware
-paresseux ; quand le moteur peut être injecté explicitement, préférez
-`ginmw.MiddlewareFor(engine, action)`, qui ne dépend pas de la publication.
+`routing.WithAuthorizer(engine)`. Dans une application Gin sans Yogourt,
+utilisez `ginmw.MiddlewareFor(engine, action)`, qui reçoit le moteur
+explicitement et ne dépend pas de la publication.
 
 ### 3. Les permissions des routes (rien à déclarer)
 

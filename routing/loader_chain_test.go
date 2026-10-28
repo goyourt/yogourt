@@ -98,9 +98,9 @@ func TestRouteHandlerChainProtectedDeniesAnonymous(t *testing.T) {
 
 	chain := routeHandlerChain(engine, "article.read", base, handler)
 
-	// Inherited callbacks, permission recording, RBAC last, then the handler.
-	if len(chain) != 4 {
-		t.Fatalf("expected 4 handlers for a protected method, got %d", len(chain))
+	// Inherited callbacks, RBAC last, then the handler.
+	if len(chain) != 3 {
+		t.Fatalf("expected 3 handlers for a protected method, got %d", len(chain))
 	}
 	w := serveChain(t, chain, nil)
 	if w.Code != http.StatusUnauthorized {

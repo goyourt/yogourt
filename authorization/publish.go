@@ -15,8 +15,9 @@ var ErrNoProvider = errors.New("authorization: no grant provider configured")
 var ErrAlreadyPublished = errors.New("authorization: engine already published")
 
 // Publish makes the engine available process-wide, for the packages that
-// cannot receive it explicitly (such as the lazy ginmw.Middleware). It must
-// be called once, before routes are loaded; a second call fails.
+// cannot receive it explicitly (such as the Context authorization helpers of
+// compiled handlers). It must be called once, before routes are loaded; a
+// second call fails.
 func Publish(engine *Engine) error {
 	if engine == nil {
 		return errors.New("authorization: cannot publish a nil engine")

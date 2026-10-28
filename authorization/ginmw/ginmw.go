@@ -10,37 +10,28 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/goyourt/yogourt/authorization"
+	"github.com/goyourt/yogourt/core"
 )
 
 // MiddlewareFor returns a Gin middleware enforcing the RBAC permission for
-// the given action against an explicit engine. ABAC restrictions are NOT
-// evaluated here — the resource is not loaded yet at middleware time; they
-// run in the handler through Context.Authorize (D5). It is usable in any Gin
-// application, with or without Yogourt.
+// the given action against an explicit engine. The middleware records the
+// action as the route permission, so that the handler can evaluate the ABAC
+// restrictions through Context.Authorize once the resource is loaded (D5) —
+// they are NOT evaluated here, the resource is not loaded yet at middleware
+// time. On an authorization.Public action the permission is recorded but no
+// RBAC check is made.
 func MiddlewareFor(engine *authorization.Engine, action string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		enforce(c, engine, authorization.Action(action))
-	}
-}
-
-// Middleware returns a Gin middleware enforcing the given action against the
-// engine published via authorization.Publish. The engine is resolved lazily
-// on each request; when none is published the request is aborted with 500.
-func Middleware(action string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		engine, ok := authorization.Published()
-		if !ok {
-			abort(c, http.StatusInternalServerError, "Internal server error")
-
-			return
+		core.SetPermission(c, action)
+		if action != authorization.Public {
+			enforce(c, engine, authorization.Action(action))
 		}
-		enforce(c, engine, authorization.Action(action))
 	}
 }
 
 func enforce(c *gin.Context, engine *authorization.Engine, action authorization.Action) {
 	if engine == nil {
-		abort(c, http.StatusInternalServerError, "Internal server error")
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
 
 		return
 	}
@@ -53,17 +44,17 @@ func enforce(c *gin.Context, engine *authorization.Engine, action authorization.
 		if errors.Is(err, authorization.ErrNoProvider) {
 			reason = authorization.ReasonMisconfigured
 		}
-		AbortDenied(c, engine, action, reason)
+		core.AbortAfterReason(c, engine, action, reason)
 
 		return
 	}
 	if subject.ID == "" {
-		AbortDenied(c, engine, action, authorization.ReasonUnauthenticated)
+		core.AbortAfterReason(c, engine, action, authorization.ReasonUnauthenticated)
 
 		return
 	}
 	if !allowed {
-		AbortDenied(c, engine, action, authorization.ReasonMissingPermission)
+		core.AbortAfterReason(c, engine, action, authorization.ReasonMissingPermission)
 
 		return
 	}
@@ -95,31 +86,4 @@ func attachGrantCache(c *gin.Context) context.Context {
 	}
 
 	return cached
-}
-
-// AbortDenied maps a denied decision to its HTTP status and aborts the
-// request. Internal reasons never reach the response body: generic messages
-// only (D7). The 404 masking of denials follows the engine's NotFoundOnDeny
-// configuration for the action; a nil engine falls back to 403. It is shared
-// by the RBAC middleware and by the Context authorization helpers so both
-// layers answer identically (D8).
-func AbortDenied(c *gin.Context, engine *authorization.Engine, action authorization.Action, reason authorization.Reason) {
-	switch reason {
-	case authorization.ReasonUnauthenticated:
-		abort(c, http.StatusUnauthorized, "Unauthorized")
-	case authorization.ReasonMissingPermission, authorization.ReasonPolicyDenied:
-		if engine != nil && engine.NotFoundOnDeny(action) {
-			abort(c, http.StatusNotFound, "Resource not found")
-		} else {
-			abort(c, http.StatusForbidden, "Forbidden")
-		}
-	case authorization.ReasonProviderError, authorization.ReasonPolicyError:
-		abort(c, http.StatusServiceUnavailable, "Service unavailable")
-	default:
-		abort(c, http.StatusInternalServerError, "Internal server error")
-	}
-}
-
-func abort(c *gin.Context, status int, message string) {
-	c.AbortWithStatusJSON(status, gin.H{"error": message})
 }
