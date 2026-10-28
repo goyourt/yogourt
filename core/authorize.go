@@ -16,7 +16,7 @@ import (
 const routePermissionKey = "yogourt.route_permission"
 
 // SetPermission records the permission declared for the matched route
-// method. It is called by the RBAC middleware (ginmw.MiddlewareFor);
+// method. It is called by the RBAC middleware (guard.MiddlewareFor);
 // applications should not need it.
 func SetPermission(c *gin.Context, permission string) {
 	c.Set(routePermissionKey, permission)
