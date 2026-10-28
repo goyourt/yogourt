@@ -166,33 +166,14 @@ func HydrateRelation(obj any, table string, relation any) error {
 }
 
 // HydrateManyToManyRelation preloads a many-to-many relation that has not
-// been loaded yet. relation points to the slice field to fill: a nil slice
-// means "not loaded", an allocated slice, even empty, is left alone.
-func HydrateManyToManyRelation[T any](obj any, table string, relation *[]T) error {
-	if relation == nil || *relation != nil {
-		return nil
-	}
-	db, err := providers.GetDB()
-	if err != nil {
-		return err
-	}
-	if err := requireCompletePrimaryKey(db, obj); err != nil {
-		return err
-	}
-	name, err := validatedRelationName(db, obj, table)
-	if err != nil {
-		return err
-	}
-	return db.Preload(name).First(obj).Error
-}
-
-// HydrateManyToManyRelationPtr is HydrateManyToManyRelation for relation
-// fields declared as a pointer to a slice (Tags *[]*Tag). relation is the
-// address of that field: a nil pointer means "not loaded". The field is
-// allocated before anything else, so the caller can always dereference it,
-// even when hydration fails. An object without its full primary key has not
-// been persisted: it has nothing to load and never reaches the database.
-func HydrateManyToManyRelationPtr[T any](obj any, table string, relation **[]T) error {
+// been loaded yet. The relation field is declared as a pointer to a slice
+// (Tags *[]*Tag) and relation is the address of that field: a nil pointer
+// means "not loaded", an allocated slice, even empty, is left alone. The
+// field is allocated before anything else, so the caller can always
+// dereference it, even when hydration fails. An object without its full
+// primary key has not been persisted: it has nothing to load and never
+// reaches the database.
+func HydrateManyToManyRelation[T any](obj any, table string, relation **[]T) error {
 	if relation == nil || *relation != nil {
 		return nil
 	}
@@ -201,7 +182,15 @@ func HydrateManyToManyRelationPtr[T any](obj any, table string, relation **[]T) 
 	if err != nil || !persisted {
 		return err
 	}
-	return HydrateManyToManyRelation(obj, table, *relation)
+	db, err := providers.GetDB()
+	if err != nil {
+		return err
+	}
+	name, err := validatedRelationName(db, obj, table)
+	if err != nil {
+		return err
+	}
+	return db.Preload(name).First(obj).Error
 }
 
 func validatedRelationName(db *gorm.DB, obj any, name string) (string, error) {

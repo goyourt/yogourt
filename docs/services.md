@@ -218,7 +218,7 @@ err = database.UpsertRelations(c, user, []string{"Profile"})
 
 <code>UpsertRelations</code> recherche des méthodes <code>GetRelation</code> et <code>SetRelation</code> par réflexion, prévalidées avant la première écriture, et exécute tous les upserts dans une transaction. Chaque relation doit implémenter <code>interfaces.Resource</code>. Identité publique vide : création ; identité présente et connue : mise à jour ; identité présente mais inconnue : erreur — un payload HTTP ne peut jamais créer une entité avec un identifiant choisi par le client. L’upsert many-to-many n’est pas pris en charge.
 
-<code>HydrateManyToManyRelation</code> attend un pointeur vers le champ slice à remplir et teste la <strong>slice</strong>, non le pointeur : une slice nil signifie « non chargée » et déclenche le préchargement, une slice allouée — même vide — est laissée telle quelle. La garde testait auparavant le pointeur, dont l'adresse n'est jamais nulle : le helper ne préchargeait donc jamais rien.
+<code>HydrateManyToManyRelation</code> s'applique aux champs many-to-many déclarés comme pointeur vers une slice (<code>Tags *[]*Tag</code>) et attend l'adresse de ce champ (<code>&s.Tags</code>). Un pointeur nil signifie « non chargée » : le champ est alloué puis la relation est préchargée ; un champ déjà alloué — même vide — est laissé tel quel. Le champ est alloué avant tout accès à la base, l'appelant peut donc toujours le déréférencer, même en cas d'erreur. Un objet sans clé primaire complète n'a pas été persisté : rien n'est chargé et la base n'est pas sollicitée.
 
 ## Authentification
 
