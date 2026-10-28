@@ -223,16 +223,15 @@ func authorizationSurfaceLines(effective map[string]map[string]methodPermission)
 
 // routeHandlerChain assembles the final handler chain for one route method:
 // inherited callbacks first, then — only when an authorizer is configured —
-// the middleware recording the effective permission, then the RBAC middleware
-// (last, right before the handler) unless the method is authorization.Public.
-// Without an authorizer the chain is strictly identical to pre-v2 (D1).
+// the RBAC middleware, last, right before the handler. MiddlewareFor returns
+// no middleware for an authorization.Public method. Without an authorizer the
+// chain is strictly identical to pre-v2 (D1).
 func routeHandlerChain(engine *authorization.Engine, permission string, baseMw []gin.HandlerFunc, handler gin.HandlerFunc) []gin.HandlerFunc {
-	handlers := make([]gin.HandlerFunc, 0, len(baseMw)+3)
+	handlers := make([]gin.HandlerFunc, 0, len(baseMw)+2)
 	handlers = append(handlers, baseMw...)
 	if engine != nil {
-		handlers = append(handlers, routePermissionMiddleware(permission))
-		if permission != authorization.Public {
-			handlers = append(handlers, ginmw.MiddlewareFor(engine, permission))
+		if middlewareHandlers := ginmw.MiddlewareFor(engine, permission); middlewareHandlers != nil {
+			handlers = append(handlers, middlewareHandlers)
 		}
 	}
 

@@ -286,7 +286,7 @@ La révocation et la rotation des clés restent à organiser dans l’applicatio
 
 ~~~go
 if !services.IsPasswordValid(password) {
-	// Politique définie dans configs/yogourt.yaml.
+	// Politique définie dans yogourt.yaml.
 }
 
 hash, err := services.GetHashedPassword(password)

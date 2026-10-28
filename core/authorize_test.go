@@ -123,7 +123,7 @@ func TestContextAuthorization(t *testing.T) {
 		assertAborted(t, c, recorder, http.StatusInternalServerError)
 
 		c, recorder = newTestContext(t, subject)
-		core.SetRoutePermission(c.Gin(), "article.read")
+		core.SetPermission(c.Gin(), "article.read")
 		if c.Authorize(nil) {
 			t.Error("Authorize must deny without a published engine")
 		}
@@ -238,7 +238,7 @@ func TestContextAuthorization(t *testing.T) {
 
 	t.Run("Authorize uses the declared route permission", func(t *testing.T) {
 		c, recorder := newTestContext(t, subject)
-		core.SetRoutePermission(c.Gin(), "article.read")
+		core.SetPermission(c.Gin(), "article.read")
 		if !c.Authorize(nil) {
 			t.Error("expected the declared permission to authorize")
 		}
@@ -247,7 +247,7 @@ func TestContextAuthorization(t *testing.T) {
 		}
 
 		c, recorder = newTestContext(t, subject)
-		core.SetRoutePermission(c.Gin(), "article.denied")
+		core.SetPermission(c.Gin(), "article.denied")
 		if c.Authorize(nil) {
 			t.Error("expected the restriction to deny")
 		}
@@ -256,7 +256,7 @@ func TestContextAuthorization(t *testing.T) {
 
 	t.Run("Authorize on a public route is misconfigured", func(t *testing.T) {
 		c, recorder := newTestContext(t, subject)
-		core.SetRoutePermission(c.Gin(), authorization.Public)
+		core.SetPermission(c.Gin(), authorization.Public)
 		if c.Authorize(nil) {
 			t.Error("Authorize is undefined on a Public route")
 		}

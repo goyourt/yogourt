@@ -13,6 +13,7 @@ Yogourt est un framework Go pour construire des API avec Gin, un routage basé s
 | [Routage](docs/routing.md) | Routes fichiers, handlers, paramètres, middlewares et plugins |
 | [Services](docs/services.md) | Modèles, base de données, authentification, mots de passe et fichiers |
 | [Autorisation](docs/authorization.md) | RBAC, ABAC, permissions par route, scopes et statuts HTTP |
+| [Migrations](docs/migrations.md) | Commandes CLI, table de suivi et écriture des migrations SQL |
 | [Migration vers la v2](docs/migration-v2.md) | Changements incompatibles et checklist de migration |
 | [Suivi de sécurité](docs/security-remediation-2026-09-12.md) | Correctifs, commits et validations de septembre 2026 |
 
@@ -36,19 +37,18 @@ Cette procédure suppose que l’application dépend déjà d’une révision v2
 ├── api/
 │   └── health/
 │       └── route.go
-├── configs/
-│   └── yogourt.yaml
 ├── middleware/
 │   └── middleware.go
 ├── .yogourt/
-└── main.go
+├── main.go
+└── yogourt.yaml
 ~~~
 
 Le dossier <code>.yogourt</code> contient des artefacts compilés et ne doit normalement pas être versionné. Ajoutez <code>.yogourt/</code> au <code>.gitignore</code> de l’application.
 
 ### 2. Configurer le runtime
 
-Créez <code>configs/yogourt.yaml</code> :
+Créez <code>yogourt.yaml</code> :
 
 ~~~yaml
 app_name: "example"

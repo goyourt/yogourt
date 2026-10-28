@@ -2,7 +2,7 @@
 
 ## JWT configuration
 
-JWT authentication requires these settings in `configs/yogourt.yaml`:
+JWT authentication requires these settings in `yogourt.yaml`:
 
 ```yaml
 security:
