@@ -117,7 +117,7 @@ d'autorisation une fois le serveur démarré. Sans moteur publié,
 
 Dans une application Yogourt, il n'y a rien d'autre à faire que
 `routing.WithAuthorizer(engine)`. Dans une application Gin sans Yogourt,
-utilisez `ginmw.MiddlewareFor(engine, action)`, qui reçoit le moteur
+utilisez `guard.MiddlewareFor(engine, action)`, qui reçoit le moteur
 explicitement et ne dépend pas de la publication.
 
 ### 3. Les permissions des routes (rien à déclarer)

@@ -124,7 +124,7 @@ Le membre du sorted set Redis est un horodatage à la seconde. Des échecs surve
 
 ### YSEC-06 — Cache non isolé entre moteurs d'autorisation
 
-**Preuves :** [cache.go](../authorization/cache.go), lignes 16 et 124–143 ; [ginmw.go](../authorization/ginmw/ginmw.go), ligne 20.
+**Preuves :** [cache.go](../authorization/cache.go), lignes 16 et 124–143 ; [guard.go](../authorization/guard/guard.go), ligne 20.
 
 La clé du cache ne contient que l'identité et le scope, sans moteur/provider. Deux moteurs utilisant le même contexte peuvent donc partager les grants du premier sans interroger la source d'autorité du second. L'API `MiddlewareFor` permet cette composition. Le chemin habituel de Yogourt publie un moteur unique : l'impact dépend d'une intégration à plusieurs moteurs.
 
@@ -194,7 +194,7 @@ La lecture porte sur 24 heures, mais aucun TTL ni retrait des événements ancie
 
 ### YSEC-13 — Les hooks de décision ne voient pas les refus anonymes
 
-**Preuve :** [ginmw.go](../authorization/ginmw/ginmw.go), lignes 49–56.
+**Preuve :** [guard.go](../authorization/guard/guard.go), lignes 49–56.
 
 Le middleware retourne un 401 avant `HasPermission` lorsque le sujet est anonyme. Les hooks de décision du moteur ne reçoivent donc pas cet événement, alors que le moteur sait représenter une décision `unauthenticated`. Il s'agit d'un angle mort d'observabilité, sans contournement d'autorisation.
 
