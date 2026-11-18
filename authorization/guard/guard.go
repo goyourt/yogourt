@@ -1,6 +1,6 @@
-// Package ginmw provides the Gin middlewares of the authorization engine. It
+// Package guard provides the Gin middlewares of the authorization engine. It
 // is the only authorization package allowed to import Gin.
-package ginmw
+package guard
 
 import (
 	"context"

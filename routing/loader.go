@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/goyourt/yogourt/authorization"
-	"github.com/goyourt/yogourt/authorization/ginmw"
+	"github.com/goyourt/yogourt/authorization/guard"
 	"github.com/goyourt/yogourt/compiler"
 	"github.com/goyourt/yogourt/middleware"
 )
@@ -230,7 +230,7 @@ func routeHandlerChain(engine *authorization.Engine, permission string, baseMw [
 	handlers := make([]gin.HandlerFunc, 0, len(baseMw)+2)
 	handlers = append(handlers, baseMw...)
 	if engine != nil {
-		if middlewareHandlers := ginmw.MiddlewareFor(engine, permission); middlewareHandlers != nil {
+		if middlewareHandlers := guard.MiddlewareFor(engine, permission); middlewareHandlers != nil {
 			handlers = append(handlers, middlewareHandlers)
 		}
 	}
